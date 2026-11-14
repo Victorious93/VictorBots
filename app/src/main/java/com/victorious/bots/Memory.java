@@ -80,6 +80,7 @@ public final class Memory {
           "INSERT INTO memories(uid,scope,bot,project,body,origin,status,source_chat,source_msg,source_label,pinned,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?)",
           Ids.uid(), scope, scope.equals("bot") ? (Object) botId : null, scope.equals("project") ? project : "", b, origin, status,
           sourceChat == 0 ? null : (Object) sourceChat, sourceMsg == 0 ? null : (Object) sourceMsg, sourceLabel == null ? "" : sourceLabel, now, now);
+      db.update("DELETE FROM memory_fts WHERE docid=?", id);
       db.insert("INSERT INTO memory_fts(docid,body) VALUES(?,?)", id, b);
       return id;
     });

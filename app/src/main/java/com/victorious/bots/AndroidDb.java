@@ -10,10 +10,16 @@ import org.json.JSONObject;
 
 /** {@link Db} over Android SQLite. */
 public final class AndroidDb implements Db {
-  private final SQLiteDatabase db;
+  private final java.util.function.Supplier<SQLiteDatabase> source;
 
+  /** A fixed handle (used inside onCreate/onUpgrade, where the helper must not be re-entered). */
   public AndroidDb(SQLiteDatabase db) {
-    this.db = db;
+    this.source = () -> db;
+  }
+
+  /** Always the helper's current handle, so closing and reopening the database is safe. */
+  public AndroidDb(java.util.function.Supplier<SQLiteDatabase> source) {
+    this.source = source;
   }
 
   private static void bind(SQLiteStatement st, Object[] args) {
@@ -30,6 +36,7 @@ public final class AndroidDb implements Db {
 
   @Override
   public List<JSONObject> rows(String sql, Object... args) {
+    SQLiteDatabase db = source.get();
     String[] a = new String[args.length];
     for (int i = 0; i < a.length; i++) a[i] = args[i] == null ? null : args[i] instanceof Boolean ? (((Boolean) args[i]) ? "1" : "0") : args[i].toString();
     List<JSONObject> out = new ArrayList<>();
@@ -52,6 +59,7 @@ public final class AndroidDb implements Db {
 
   @Override
   public long insert(String sql, Object... args) {
+    SQLiteDatabase db = source.get();
     SQLiteStatement st = db.compileStatement(sql);
     try {
       bind(st, args);
@@ -63,6 +71,7 @@ public final class AndroidDb implements Db {
 
   @Override
   public int update(String sql, Object... args) {
+    SQLiteDatabase db = source.get();
     SQLiteStatement st = db.compileStatement(sql);
     try {
       bind(st, args);
@@ -74,11 +83,12 @@ public final class AndroidDb implements Db {
 
   @Override
   public void exec(String sql) {
-    db.execSQL(sql);
+    source.get().execSQL(sql);
   }
 
   @Override
   public <T> T tx(Work<T> work) {
+    SQLiteDatabase db = source.get();
     db.beginTransaction();
     try {
       T r = work.run();

@@ -1,0 +1,8 @@
+# Notices
+
+VictorBots 0.2.0 was designed after reading two MIT-licensed projects. **No source code, branding, assets or setup/injection scripts from either were copied, run, or merged.** The ideas below were re-implemented independently in Java (app) and Python (runner), against this repository's own requirements. They are credited here as a courtesy.
+
+* **OnlyTerp/opengrok** — MIT, © 2026 OnlyTerp. Ideas: choosing a model per agent, "verified hop" (confirm a configuration end to end before claiming it works), live per-agent telemetry, a context guardian. VictorBots' equivalents are per-bot provider/model, the five-step connection diagnostics, usage ledger and token budget. opengrok is a config sidecar that injects into another application; VictorBots does nothing of the kind.
+* **Z4YT0N/OpenGrokBot** — MIT, © 2026 Mahmoud Amr (FortuneCode). Ideas: @mention parsing with longest-name-first matching and word boundaries, a dispatcher that routes a message to one to three relevant members, capped rounds, per-member approvals, scheduled routines, per-member memory. VictorBots differs deliberately: memory updates never use a fixed vendor model or upload unasked (they obey the owner's inference policy), routing falls back to a local keyword match when policy forbids a model call, approvals for device work live in DroidCommand's policy service, and no webhooks are exposed.
+
+Third-party test-only libraries (never packaged in the APK), pinned by SHA-256 in `scripts/fetch-test-libs.sh`: `org.json:json:20240303` (JSON licence), `org.xerial:sqlite-jdbc:3.46.1.3` (Apache-2.0), `org.slf4j:slf4j-api:1.7.36` (MIT).

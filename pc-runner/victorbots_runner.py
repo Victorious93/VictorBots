@@ -669,12 +669,15 @@ def next_after(schedule, tz, after):
         if m < 5 or m > 7 * 24 * 60:
             raise ValueError("interval must be 5 minutes to 7 days")
         return after + m * 60
-    hh, mm = [int(x) for x in str(schedule["time"]).split(":")]
+    if t not in ("daily", "weekly"):
+        raise ValueError("unknown schedule type")
+    try:
+        hh, mm = [int(x) for x in str(schedule["time"]).split(":")]
+    except (KeyError, ValueError):
+        raise ValueError("time must be HH:MM")
     if not (0 <= hh < 24 and 0 <= mm < 60):
         raise ValueError("bad time")
     days = set(schedule.get("days", range(7))) if t == "weekly" else set(range(7))
-    if t not in ("daily", "weekly"):
-        raise ValueError("unknown schedule type")
     if t == "weekly" and (not days or any(d < 0 or d > 6 for d in days)):
         raise ValueError("bad days")
     start = datetime.fromtimestamp(after, z)
@@ -883,12 +886,14 @@ def serve(cfg, ready=None):
 
 def main():
     ap = argparse.ArgumentParser(description="VictorBots PC runner")
-    ap.add_argument("--config", required=True)
+    ap.add_argument("--config")
     ap.add_argument("--hash-token", action="store_true", help="read a token on stdin and print its SHA-256 for the config")
     a = ap.parse_args()
     if a.hash_token:
         print(hashlib.sha256(sys.stdin.readline().strip().encode()).hexdigest())
         return
+    if not a.config:
+        ap.error("--config is required")
     with open(a.config) as f:
         cfg = Config(json.load(f))
     serve(cfg)

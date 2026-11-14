@@ -99,6 +99,8 @@ public final class Migrations {
             + " INTEGER NOT NULL,updated INTEGER NOT NULL)");
     s.add("CREATE INDEX memories_bot ON memories(bot,status)");
     s.add("CREATE VIRTUAL TABLE memory_fts USING fts4(body)");
+    // FTS tables have no foreign keys: keep the index in step when a memory disappears by cascade.
+    s.add("CREATE TRIGGER memories_fts_ad AFTER DELETE ON memories BEGIN DELETE FROM memory_fts WHERE docid=old.id; END");
     // --- jobs: persistent, correlated, backend-reported ---
     s.add(
         "CREATE TABLE jobs(id INTEGER PRIMARY KEY,uid TEXT NOT NULL UNIQUE,request_id TEXT NOT"

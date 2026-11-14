@@ -1,5 +1,54 @@
 # Victorious Framework — VictorBots verification
 
+## 0.2.0 development build — 2026-11-14
+
+**Build environment:** Linux container, JDK 21, Android SDK platform 35 / build-tools 35.0.0 (`scripts/build-sdk.sh`), Python 3.13, Android emulator API 28 x86_64 **software-emulated (no KVM)**. No physical phone. No real cloud-provider credentials. No real Ollama/llama.cpp server. No DroidCommand APK installed.
+
+### Artifact (built by `scripts/build-sdk.sh`, not by Gradle)
+* Path: `app/build/sdk/VictorBots-0.2.0-debug.apk` (not committed; `*.apk` is ignored)
+* Package `com.victorious.bots`, versionName `0.2.0`, versionCode `2`, minSdk 28, targetSdk 35
+* Signed with the **public development key** (`signing/victorbots-debug.jks`), APK signature scheme v3, signer SHA-256 `23cefc35fa9b8ce1f5d3cce7b189aa340ff65051834cc8996eada08d6a0f5b82` (identical to 0.1.0, so it updates 0.1.0 in place). **This is not a production-signed release.**
+* APK SHA-256 of the reviewed build: `8a8b0159841495d392f8d4a9bb9e5d4789c8daa68d52b4e62fe4160f878d7170` (172,509 bytes). The script is not byte-reproducible across runs, so a rebuild will have a different checksum; the signer fingerprint above is the stable identity.
+
+### Automated checks actually run (all passed)
+| Suite | Where it ran | Checks |
+|---|---|---|
+| `MigrationTest` | JVM, real SQLite | 21 — 0.1.0 database upgraded with data preserved, cascades intact after the `chats` rebuild, rollback on failure, FTS4 |
+| `PolicyTest` | JVM | 189 — full purpose × mode × destination matrix, endpoint/origin rules, redaction, token budget |
+| `ProviderTest` | JVM, **real TLS server** | 42 — pinning accepted/rejected, unpinned self-signed rejected, redirects refused and key not sent to target, streaming + usage + first-token, cancel, every error category, secrets absent from messages, images refused unless enabled |
+| `GatewayTest` | JVM | 145 — no cloud call under PC-only/PC-first for any purpose, bot can only tighten policy, injected text cannot change policy, key never sent to another endpoint, PC without token refused, ledger, structural scan that nothing bypasses the gateway |
+| `DiagnosticsTest` | JVM, real TLS | 46 — five separate states, policy blocks without any request, no secret in any text, cost/usage labelling |
+| `MemoryTest` | JVM | 54 — scoping, project sharing opt-in, inert suggestions, budget, provenance, untrusted wrapping, policy-gated extraction, cascade/FTS regression found on device |
+| `TeamTest` | JVM | 59 — mentions, routing with/without policy, turn/token/time limits, stop, failure isolation, duplicates, hop limit, private-memory isolation, review workflow, restart recovery |
+| `RunnerTest` | JVM client ↔ **real Python runner over real TLS** | 61 — auth, path/symlink/secret-file refusal, redaction, artifact checksum, idempotent request ids, cancel, write serialisation, approval wait/deny/expiry, runner restart, uncertain outcome reconcile |
+| `BackupTest` | JVM | 61 — round trip, no secrets, idempotent restore, conflicts, 13 hostile/malformed inputs, v1 backups |
+| `RoutineAttachTest` | JVM | 56 — Java schedule == runner schedule (golden values from the runner, incl. DST), missed/overlap/replay, attachments, skills grant nothing |
+| `DcaExecTest` | JVM | 20 — receipt mapping: only `executed` completes |
+| `pc-runner/test_runner.py` | Python | 15 run (1 skipped live check) — DST schedules, routine replay/missed/overlap/approval, worktree isolation, proxy does not forward the token, MCP client + read-only allow-list **against a local fixture server** |
+| `SmokeInstrumentation` | **API 28 emulator** | 108 — see below |
+
+JVM total: 754 checks, 0 failed (`bash scripts/test-jvm.sh`).
+
+### On-device (API 28 x86_64 emulator, isolated)
+108 checks passed, including: a genuine 0.1.0 database upgraded (messages not lost in the table rebuild, foreign keys on afterwards); Keystore key bound to profile+origin (wrong origin refused; ciphertext moved to another profile id or with an edited origin label fails authentication; never plaintext); 0.1.0 shared key migrated into a bound profile; backup round trip on Android SQLite; policy gateway and a team round on Android SQLite; job state machine; FTS4 search; every screen opened by clicking through the UI.
+
+**Live flow (emulator → real PC runner on the build host over the emulator's network, `10.0.2.2`, real TLS with a pinned self-signed certificate):** reachable/auth/model-listed; streamed reply with measured first-token time (197 ms of 506 ms), requested vs server-reported model, tokens as reported; wrong pin and unpinned self-signed rejected by Android's TLS stack; a job completed by the runner's own report; an approval-required command held until approved and run only afterwards; a long job cancelled; PC-only policy allowing the PC bot. *The model behind the runner was a stub server (`tests/live/fixture.py`), not a real model, and the "PC" was the build host, not a phone-reachable LAN machine.*
+
+### Bugs the tests found and that were fixed
+Regex redaction leaked a token after `Authorization: Bearer`; diagnostics overwrote a policy-blocked state; team prompts contained the owner message twice; backup import silently skipped an invalid routine and duplicated bots with non-hex ids on re-import; runner raised `KeyError` on a malformed schedule; **orphaned search-index rows crashed memory insertion after a bot was deleted (found only on the device)**.
+
+### NOT verified / blockers (do not read these as passed)
+* **Real MCP server:** `pc-runner` can bridge the official `@modelcontextprotocol/server-filesystem@2.3.0`, but running it needs `npx` to download the package and the session's permission layer refused that. The runner's MCP client and read-only allow-list were tested only against a local fixture. Run `VB_REAL_MCP=1 python3 pc-runner/test_runner.py Mcp` yourself.
+* **Real provider behaviour:** no cloud provider was called; no real Ollama or llama.cpp. OpenAI's documentation host was unreachable, so OpenAI-specific parameters were not checked against it. Ollama's documented `stream_options`, `tools`, `reasoning_effort`, `/api/show` capabilities and `*.context_length` were read and used.
+* **DroidCommand `COMPANION_EXEC`:** implemented in `droidcommand-AI` (separate branch). See that repository's audit entry for exactly what compiled/ran. The VictorBots side was tested against its wire format only; **no DroidCommand APK was installed, so no live DroidCommand→VictorBots execution was observed.** The existing `COMPANION_ASSIST` live reply path is still unverified, as in 0.1.0.
+* **systemd install path** of `pc-runner/install-ubuntu.sh` (no systemd in the container). The non-systemd install, certificate, token hash and TLS/auth behaviour were run.
+* **Physical device, Doze/background behaviour of phone routines, Android 10–15**, the JobScheduler run of `RoutineService`, screen rotation, and image attachments to a real vision model were not exercised.
+* **Gradle** (`./gradlew :app:assembleDebug`) was not run for VictorBots (AGP unresolved in the environment).
+* Visual design was not reviewed beyond "it draws and navigates".
+
+## 0.1.0 history (kept)
+
+
 ## DroidCommand integration update — 2026-11-08
 
 - Verified the existing VictorBots 0.1.0 APK signature and package name with Android SDK tools.

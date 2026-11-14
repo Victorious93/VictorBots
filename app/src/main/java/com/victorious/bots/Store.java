@@ -12,7 +12,12 @@ import org.json.JSONObject;
 /** SQLite helper. All logic lives in {@link Db}-based classes; this adds lifecycle and legacy accessors. */
 public final class Store extends SQLiteOpenHelper {
   public Store(Context c) {
-    super(c, "victorbots.db", null, Migrations.VERSION);
+    this(c, "victorbots.db");
+  }
+
+  /** A differently named database (tests only); the app itself always uses the default name. */
+  public Store(Context c, String name) {
+    super(c, name, null, Migrations.VERSION);
   }
 
   /** Foreign keys stay off while migrating (table rebuild) and are switched on in onOpen. */
@@ -49,7 +54,7 @@ public final class Store extends SQLiteOpenHelper {
 
   /** Always the current writable database. */
   public Db db() {
-    return new AndroidDb(getWritableDatabase());
+    return new AndroidDb(() -> getWritableDatabase());
   }
 
   // ---- convenience wrappers used by the UI ----

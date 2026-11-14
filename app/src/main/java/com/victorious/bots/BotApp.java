@@ -1,49 +1,180 @@
 package com.victorious.bots;
 
 import android.app.Application;
-import android.os.*;
-import java.util.List;
+import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
+import java.util.*;
 import java.util.concurrent.*;
+import org.json.JSONException;
+import org.json.JSONObject;
 
+/**
+ * Application scope: owns the database, the Gateway and the background executors so that work and
+ * results survive activity recreation. Foreground-only: there is no service keeping the app alive.
+ */
 public final class BotApp extends Application {
   public Store store;
-  private final ExecutorService worker = Executors.newSingleThreadExecutor();
+  public Db db;
+  public KV kv;
+  public SecretStore secrets;
+  public Profiles profiles;
+  public Gateway gateway;
+  public Memory memory;
+  public Jobs jobs;
+  public Diagnostics diagnostics;
+  public JobMonitor monitor;
+  public TeamEngine teams;
   public Runnable changed;
+  private final ExecutorService worker = Executors.newSingleThreadExecutor(), rounds = Executors.newFixedThreadPool(2), misc = Executors.newFixedThreadPool(2);
+  private final ScheduledExecutorService poller = Executors.newSingleThreadScheduledExecutor();
+  private final Handler main = new Handler(Looper.getMainLooper());
+  private final Map<Long, Provider.Cancel> inflight = new ConcurrentHashMap<>(), roundStops = new ConcurrentHashMap<>();
+  public volatile String monitorNote = "";
 
   @Override
   public void onCreate() {
     super.onCreate();
     store = new Store(this);
-    store
-        .getWritableDatabase()
-        .execSQL(
-            "UPDATE messages SET status='error',role='system',body='Interrupted when the app"
-                + " process stopped. No automatic retry was sent.' WHERE status='pending' AND"
-                + " body!='Waiting for DroidCommand consent…'");
+    db = store.db();
+    SharedPreferences prefs = getSharedPreferences("settings", 0);
+    kv = new PrefsKV(prefs);
+    secrets = new SecretStore(this);
+    profiles = new Profiles(db, kv, secrets);
+    gateway = new Gateway(db, profiles, secrets, Gateway.LIVE);
+    memory = new Memory(db, kv);
+    jobs = new Jobs(db);
+    diagnostics = new Diagnostics(db, profiles, secrets, gateway);
+    teams = new TeamEngine(db, gateway, memory, System::currentTimeMillis, this::notifyChanged);
+    monitor = new JobMonitor(db, jobs, id -> {
+      Profile p = profiles.get(id);
+      if (p == null) throw new IllegalStateException("The PC profile for this job was deleted.");
+      return new RunnerClient(p, secrets.read(p.id, Hosts.origin(p.base)));
+    });
+    // Anything left pending by a dead process failed; nothing is retried automatically.
+    db.update("UPDATE messages SET status='error',role='system',body='Interrupted when the app process stopped. No automatic retry was sent.' WHERE status='pending' AND body!='Waiting for DroidCommand consent…'");
+    TeamEngine.recover(db);
+    Jobs.recover(db);
+    Routines.recover(db);
+    LegacyMigration.run(this, store, profiles, secrets, kv, prefs);
+    poller.scheduleWithFixedDelay(this::pollJobs, 3, 3, TimeUnit.SECONDS);
+    RoutineService.reschedule(this);
   }
 
-  public void ask(long reply, String endpoint, String key, String model, List<Rules.Turn> turns) {
-    worker.execute(
-        () -> {
-          try {
-            Provider.Reply result = Provider.ask(endpoint, key, model, turns);
-            store.finish(reply, result.text, true);
-            getSharedPreferences("settings", 0).edit().putString("usage", result.usage).apply();
-          } catch (Exception e) {
-            String message =
-                e instanceof java.net.SocketTimeoutException
-                    ? "Provider timed out. It may still have processed the request; no automatic"
-                          + " retry was sent."
-                    : e instanceof java.io.IOException
-                        ? e.getMessage()
-                        : "Could not parse the provider reply. Check endpoint compatibility.";
-            store.finish(reply, message == null ? "Provider connection failed." : message, false);
+  public void notifyChanged() {
+    main.post(() -> {
+      if (changed != null) changed.run();
+    });
+  }
+
+  private void pollJobs() {
+    try {
+      if (changed == null || jobs.active().isEmpty()) return;
+      JobMonitor.Report r = monitor.pollOnce();
+      monitorNote = r.unreachable > 0 ? "Runner unreachable for " + r.unreachable + " job(s); showing the last reported state." : "";
+      if (r.changed > 0 || r.unreachable > 0) notifyChanged();
+    } catch (RuntimeException ignored) {
+    }
+  }
+
+  public void submitJob(long jobId, String workspace) {
+    misc.execute(() -> {
+      monitor.submit(jobId, workspace);
+      notifyChanged();
+    });
+  }
+
+  public void runAsync(Runnable r) {
+    misc.execute(() -> {
+      try {
+        r.run();
+      } finally {
+        notifyChanged();
+      }
+    });
+  }
+
+  /** One owner-initiated chat request. The reply message must already exist with status 'pending'. */
+  public void ask(long reply, long botId, List<Rules.Turn> turns, Policy.Purpose purpose, boolean confirmed, long profileOverride, boolean stream) {
+    Provider.Cancel cancel = new Provider.Cancel();
+    inflight.put(reply, cancel);
+    worker.execute(() -> {
+      StringBuilder partial = new StringBuilder();
+      long[] last = {0};
+      try {
+        Gateway.Req q = new Gateway.Req();
+        q.purpose = purpose;
+        q.botId = botId;
+        q.turns = turns;
+        q.stream = stream;
+        q.cancel = cancel;
+        q.ownerConfirmed = confirmed;
+        q.profileOverride = profileOverride;
+        q.sink = piece -> {
+          partial.append(piece);
+          long now = System.currentTimeMillis();
+          if (now - last[0] > 400) {
+            last[0] = now;
+            db.update("UPDATE messages SET body=? WHERE id=? AND status='pending'", partial.toString(), reply);
+            notifyChanged();
           }
-          new Handler(Looper.getMainLooper())
-              .post(
-                  () -> {
-                    if (changed != null) changed.run();
-                  });
-        });
+        };
+        Gateway.Result res = gateway.run(q);
+        JSONObject meta = new JSONObject().put("model_requested", res.plan.model).put("model_reported", res.reply.modelReported).put("latency_ms", res.reply.latencyMs).put("streamed", res.reply.streamed).put("profile", res.plan.profile.name).put("profile_id", res.plan.profile.id);
+        if (res.reply.firstTokenMs >= 0) meta.put("ttft_ms", res.reply.firstTokenMs);
+        if (res.reply.usage.in != null) meta.put("in_tokens", res.reply.usage.in);
+        if (res.reply.usage.out != null) meta.put("out_tokens", res.reply.usage.out);
+        store.finish(reply, res.reply.text, true, meta.toString());
+      } catch (Gateway.Denied d) {
+        store.finish(reply, d.getMessage(), false, "{}");
+      } catch (ProviderError e) {
+        String body = e.category == ProviderError.Category.CANCELLED ? "Stopped. The provider may still have processed it; nothing was retried." : e.category.label + ": " + e.getMessage();
+        try {
+          JSONObject meta = new JSONObject().put("error_category", e.category.name());
+          store.finish(reply, partial.length() > 0 ? partial + "\n\n[" + body + "]" : body, false, meta.toString());
+        } catch (JSONException je) {
+          store.finish(reply, body, false, "{}");
+        }
+      } catch (Exception e) {
+        store.finish(reply, "Could not complete the request: " + Redact.snippet(String.valueOf(e.getMessage()), 160), false, "{}");
+      } finally {
+        inflight.remove(reply);
+      }
+      notifyChanged();
+    });
+  }
+
+  public void stop(long reply) {
+    Provider.Cancel c = inflight.get(reply);
+    if (c != null) c.cancel();
+  }
+
+  public boolean isInflight(long reply) {
+    return inflight.containsKey(reply);
+  }
+
+  public void startRound(long chat, String text) {
+    Provider.Cancel stop = new Provider.Cancel();
+    roundStops.put(chat, stop);
+    rounds.execute(() -> {
+      try {
+        teams.post(chat, text, stop);
+      } catch (RuntimeException e) {
+        db.insert("INSERT INTO messages(chat,role,body,status,created,author,kind) VALUES(?,?,?,?,?,0,'notice')", chat, "system", "Could not start the round: " + Redact.snippet(String.valueOf(e.getMessage()), 160), "error", System.currentTimeMillis());
+      } finally {
+        roundStops.remove(chat);
+        notifyChanged();
+      }
+    });
+    notifyChanged();
+  }
+
+  public void stopRound(long chat) {
+    Provider.Cancel c = roundStops.get(chat);
+    if (c != null) c.cancel();
+  }
+
+  public boolean roundRunning(long chat) {
+    return roundStops.containsKey(chat) || db.count("SELECT COUNT(*) n FROM rounds WHERE chat=? AND state='running'", chat) > 0;
   }
 }
