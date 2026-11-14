@@ -45,10 +45,17 @@ public final class Rules {
 
   public static final class Turn {
     public final String role, content;
+    /** data: URIs of owner-selected images; empty for text-only turns. */
+    public final List<String> images;
 
     public Turn(String r, String c) {
+      this(r, c, new ArrayList<String>());
+    }
+
+    public Turn(String r, String c, List<String> imgs) {
       role = r;
       content = c;
+      images = imgs;
     }
   }
 
@@ -69,6 +76,88 @@ public final class Rules {
     kept.add(0, new Turn("system", instruction));
     kept.add(new Turn("user", input));
     return kept;
+  }
+
+  /** Result of model-aware context budgeting. */
+  public static final class Plan {
+    public List<Turn> turns = new ArrayList<>();
+    public int omitted, budgetTokens, reserveTokens;
+    public long estimatedInputTokens;
+    public String basis = "";
+
+    public String summary() {
+      return "~"
+          + estimatedInputTokens
+          + " input tokens (estimate, "
+          + basis
+          + ") of "
+          + (budgetTokens - reserveTokens)
+          + " available; "
+          + reserveTokens
+          + " reserved for the reply"
+          + (omitted > 0 ? "; " + omitted + " older message" + (omitted == 1 ? "" : "s") + " omitted" : "");
+    }
+  }
+
+  public static long tokens(String text, double charsPerToken) {
+    if (text == null || text.isEmpty()) return 0;
+    return (long) Math.ceil(text.length() / charsPerToken) + 4;
+  }
+
+  /**
+   * Budgets in tokens. The system block (instructions + memory) and the current input are essential:
+   * if they alone do not fit, this throws instead of clipping them. Older whole turns are dropped
+   * oldest-first and counted so the owner can see what was left out.
+   */
+  public static Plan plan(
+      List<Turn> history,
+      String system,
+      String input,
+      int budgetTokens,
+      int reserveTokens,
+      double charsPerToken,
+      String basis) {
+    length(system, 200000, "System instructions");
+    if (input == null || input.trim().isEmpty()) throw new IllegalArgumentException("Message is required.");
+    int available = budgetTokens - reserveTokens;
+    long essential = tokens(system, charsPerToken) + tokens(input, charsPerToken);
+    if (essential > available)
+      throw new IllegalArgumentException(
+          "The instructions, memory and your message need ~"
+              + essential
+              + " tokens but only "
+              + available
+              + " are available ("
+              + budgetTokens
+              + " budget, "
+              + reserveTokens
+              + " reserved for the reply). Shorten the message or memory, or raise this profile's"
+              + " context limit if the model supports more. Nothing was clipped or sent.");
+    Plan p = new Plan();
+    p.budgetTokens = budgetTokens;
+    p.reserveTokens = reserveTokens;
+    p.basis = basis;
+    long remaining = available - essential;
+    List<Turn> kept = new ArrayList<>();
+    int considered = 0;
+    for (int i = history.size() - 1; i >= 0; i--) {
+      Turn t = history.get(i);
+      if (!t.role.equals("user") && !t.role.equals("assistant")) continue;
+      considered++;
+      long cost = tokens(t.content, charsPerToken);
+      if (cost > remaining) break;
+      kept.add(0, t);
+      remaining -= cost;
+    }
+    while (!kept.isEmpty() && kept.get(0).role.equals("assistant")) kept.remove(0);
+    int total = 0;
+    for (Turn t : history) if (t.role.equals("user") || t.role.equals("assistant")) total++;
+    p.omitted = total - kept.size();
+    kept.add(0, new Turn("system", system));
+    kept.add(new Turn("user", input));
+    p.turns = kept;
+    p.estimatedInputTokens = available - remaining;
+    return p;
   }
 
   private Rules() {}
