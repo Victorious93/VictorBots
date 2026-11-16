@@ -118,7 +118,7 @@ final class TeamScreen {
       boolean user = m.optString("role").equals("user");
       boolean notice = m.optString("kind").equals("notice");
       LinearLayout b = ui.card(messages);
-      b.setBackground(ui.bg(user ? 0xff283320 : Ui.CARD, 18));
+      b.setBackground((user ? ui.bg(Ui.USER_BUBBLE, 18, Ui.ACCENT2) : ui.bg(Ui.CARD, 18)));
       long author = m.optLong("author");
       String label = user ? "YOU" : notice ? "NOTICE" : (names.containsKey(author) ? names.get(author).toUpperCase(Locale.ROOT) : "BOT");
       if (m.optString("status").equals("pending")) label += " · WORKING";
