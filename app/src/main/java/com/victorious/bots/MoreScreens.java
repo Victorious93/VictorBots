@@ -219,7 +219,7 @@ final class MoreScreens {
       app.runAsync(() -> {
         try {
           Profile pc = app.profiles.get(r.optLong("profile"));
-          RunnerClient c = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base)));
+          RunnerClient c = RunnerClient.forProfile(pc, app.secrets);
           app.db.update("UPDATE routines SET enabled=? WHERE id=?", on ? 1 : 0, id);
           JSONObject def = Routines.pcDefinition(app.db.one("SELECT * FROM routines WHERE id=?", id));
           c.putRoutine(r.optString("uid"), def);
@@ -242,7 +242,7 @@ final class MoreScreens {
       app.runAsync(() -> {
         try {
           Profile pc = app.profiles.get(r.optLong("profile"));
-          new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base))).deleteRoutine(r.optString("uid"));
+          RunnerClient.forProfile(pc, app.secrets).deleteRoutine(r.optString("uid"));
           app.db.update("DELETE FROM routines WHERE id=?", id);
         } catch (Exception e) {
           h.act().runOnUiThread(() -> ui.info("Not deleted", "The PC runner could not be reached, so its copy would keep running. Try again when it is reachable. " + e.getMessage()));
@@ -265,7 +265,7 @@ final class MoreScreens {
       app.runAsync(() -> {
         try {
           Profile pc = app.profiles.get(r.optLong("profile"));
-          JSONObject o = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base))).routineRuns(r.optString("uid"));
+          JSONObject o = RunnerClient.forProfile(pc, app.secrets).routineRuns(r.optString("uid"));
           JSONArray a = o.optJSONArray("runs");
           if (a != null) for (int i = 0; i < a.length(); i++) {
             JSONObject x = a.getJSONObject(i);
@@ -314,8 +314,9 @@ final class MoreScreens {
           sch.put("days", d);
         }
         boolean pc = target.getSelectedItemPosition() == 1;
-        Profile pcp = app.profiles.byKind(Policy.Kind.PC);
+        Profile pcp = app.profiles.runnerProfile();
         if (pc && pcp == null) throw new IllegalArgumentException("Add your PC under Providers first.");
+        if (pc && pcp.runner() == null) throw new IllegalArgumentException(VictorLinux.NO_RUNNER + ". “" + pcp.name + "” has no runner URL; add one under Providers.");
         String args = pc ? new JSONObject().put("workspace", ws.getText().toString().trim()).put("tool_args", new JSONObject()).toString() : "{}";
         Routines.create(app.db, name.getText().toString(), bots.get(bot.getSelectedItemPosition()).optLong("id"), pc ? "PC" : "PHONE", pc ? pcp.id : 0, instruction.getText().toString(), pc ? tool.getText().toString().trim() : "", args, tz.getText().toString().trim(), sch.toString(), ov[overlap.isChecked() ? 0 : 1], ms[missed.isChecked() ? 0 : 1]);
       } catch (NumberFormatException e) {
@@ -333,14 +334,18 @@ final class MoreScreens {
     body.addView(ui.text("CONNECTORS", 11, Ui.ACCENT));
     body.addView(ui.heading("Read-only repository access.", 26));
     body.addView(ui.text("A connector is an MCP server your PC runner is configured to expose, limited by the runner to read-only tools. You enable it per bot and can revoke it any time. VictorBots does not install or run MCP servers; the runner owner configures them. Attached results are quoted as untrusted data.", 13, Ui.MUTED));
-    Profile pc = app.profiles.byKind(Policy.Kind.PC);
+    Profile pc = app.profiles.runnerProfile();
     if (pc == null) {
       body.addView(ui.text("Add your PC under Providers first.", 13, Ui.WARN));
       return;
     }
+    if (pc.runner() == null) {
+      body.addView(ui.text(VictorLinux.NO_RUNNER + ". “" + pc.name + "” has no runner URL; add one under Providers to use connectors.", 13, Ui.WARN));
+      return;
+    }
     body.addView(ui.button("Load connectors from the runner", () -> app.runAsync(() -> {
       try {
-        JSONObject o = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base))).connectors();
+        JSONObject o = RunnerClient.forProfile(pc, app.secrets).connectors();
         JSONArray a = o.getJSONArray("connectors");
         h.act().runOnUiThread(() -> offer(a, pc));
       } catch (Exception e) {
@@ -408,7 +413,7 @@ final class MoreScreens {
         String tool = tn[w], wsid = ws.getText().toString().trim(), cid = c.optString("connector");
         app.runAsync(() -> {
           try {
-            JSONObject res = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base))).connectorCall(cid, tool, args, wsid);
+            JSONObject res = RunnerClient.forProfile(pc, app.secrets).connectorCall(cid, tool, args, wsid);
             String text = res.optString("text");
             h.act().runOnUiThread(() -> done.accept(cid + ":" + tool + " " + args.optString("path"), Ui.clip(text, Attachments.MAX_SOURCE_CHARS)));
           } catch (Exception e) {

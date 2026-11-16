@@ -8,19 +8,51 @@ import javax.net.ssl.HttpsURLConnection;
 import org.json.*;
 
 /**
- * Client for the VictorBots PC runner (see pc-runner/). Same authenticated HTTPS origin and pin as the
- * PC inference profile. It only reports what the runner says; it never infers a result.
+ * Client for the VictorBots PC runner (see pc-runner/). For ordinary PC profiles: same authenticated
+ * HTTPS origin and pin as the inference profile. A VictorLinux profile reaches a runner only through
+ * its own runner URL ({@link Profile#runner}). It only reports what the runner says; it never infers
+ * a result.
  */
 public final class RunnerClient {
   private final Provider.Cfg cfg;
   private final String rb;
 
+  /**
+   * @param key the runner's access token. For ordinary PC profiles that is the profile's own token
+   *     (the runner lives at /runner/v1 beside the inference API); for a VictorLinux profile with a
+   *     separate runner it is the runner's own token.
+   * @throws IllegalStateException {@link VictorLinux#NO_RUNNER} when the profile has no runner
+   */
   public RunnerClient(Profile p, String key) {
     if (p.kind != Policy.Kind.PC) throw new IllegalArgumentException("A PC profile is required.");
+    Profile.Runner r = p.runner();
+    if (r == null) throw new IllegalStateException(VictorLinux.NO_RUNNER + ".");
     cfg = p.cfg(key);
+    cfg.base = r.base;
+    cfg.pin = r.pin;
     cfg.readMs = 30000;
     cfg.connectMs = 8000;
-    rb = Hosts.runnerBase(p.base);
+    rb = r.base;
+  }
+
+  /**
+   * Builds a client with the credentials bound to this profile's runner. Refuses (with a message the UI
+   * can show) when there is no runner, or the token is missing or no longer matches the endpoint/pin.
+   */
+  public static RunnerClient forProfile(Profile p, Secrets secrets) {
+    if (p == null) throw new IllegalStateException("The PC profile no longer exists.");
+    Profile.Runner r = p.runner();
+    if (r == null) throw new IllegalStateException(VictorLinux.NO_RUNNER + ".");
+    String key;
+    try {
+      key = secrets.read(r.secretId, r.binding);
+    } catch (SecurityException e) {
+      throw new IllegalStateException("The stored access token no longer matches this " + (r.separate ? "runner's" : "profile's") + " address or certificate pin. Open Providers, edit the profile and enter it again.");
+    } catch (Exception e) {
+      throw new IllegalStateException("The stored access token could not be decrypted. Enter it again in Providers.");
+    }
+    if (key.isEmpty()) throw new IllegalStateException("No access token is stored for this " + (r.separate ? "runner" : "PC profile") + ". VictorBots will not call it anonymously.");
+    return new RunnerClient(p, key);
   }
 
   /** @param sentFlag set to true once the request body has been written (the runner may have it). */

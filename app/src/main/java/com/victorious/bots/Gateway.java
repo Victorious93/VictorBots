@@ -97,13 +97,12 @@ public final class Gateway {
       throw new Denied("DroidCommand answers only after you tap Allow in DroidCommand, so it cannot be used for unattended or background work.");
     }
     if (plan.model.isEmpty()) throw new Denied("No model is set for " + p.name + ". Choose or type a model in the profile or on the bot.");
-    String origin = Hosts.origin(p.base);
     String key;
     try {
-      key = secrets.read(p.id, origin);
+      key = secrets.read(p.id, p.binding());
     } catch (SecurityException e) {
-      log(r, plan, null, 0, 0, "key bound to a different endpoint", false);
-      throw new Denied("The stored key belongs to a different endpoint. Enter the key again for this endpoint.");
+      log(r, plan, null, 0, 0, "key bound to a different endpoint or pin", false);
+      throw new Denied("The stored key does not match this profile's endpoint" + (p.kind == Policy.Kind.PC && !p.pin.isEmpty() ? " and certificate pin" : "") + ". Enter the key again.");
     } catch (Exception e) {
       log(r, plan, null, 0, 0, "key unreadable", false);
       throw new Denied("The stored key could not be decrypted. Enter it again.");

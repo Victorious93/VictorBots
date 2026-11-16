@@ -14,9 +14,10 @@ import javax.crypto.spec.GCMParameterSpec;
 
 /**
  * Provider keys, encrypted with a non-exportable Android Keystore AES-GCM key. Each ciphertext is
- * authenticated against "profileId|origin" (GCM associated data) and the origin is stored beside it:
- * decrypting for any other profile or endpoint fails, so a key cannot be replayed to a new endpoint
- * even if the profile row is edited.
+ * authenticated against "profileId|binding" (GCM associated data) and the binding is stored beside it.
+ * The binding is the endpoint origin and, for PC profiles with a pinned certificate, the pin
+ * ({@link Profile#binding}); decrypting for any other profile, endpoint or pin fails, so a key cannot
+ * be replayed to a new endpoint or certificate even if the profile row is edited.
  */
 public final class SecretStore implements Secrets {
   private static final String ALIAS = "victorbots-provider";
@@ -43,21 +44,21 @@ public final class SecretStore implements Secrets {
     return (SecretKey) ks.getKey(ALIAS, null);
   }
 
-  private static byte[] aad(long id, String origin) {
-    return (id + "|" + origin).getBytes(StandardCharsets.UTF_8);
+  private static byte[] aad(long id, String binding) {
+    return (id + "|" + binding).getBytes(StandardCharsets.UTF_8);
   }
 
   @Override
-  public void save(long profileId, String origin, String value) throws Exception {
+  public void save(long profileId, String binding, String value) throws Exception {
     if (value.isEmpty()) {
       remove(profileId);
       return;
     }
     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
     cipher.init(Cipher.ENCRYPT_MODE, key());
-    cipher.updateAAD(aad(profileId, origin));
+    cipher.updateAAD(aad(profileId, binding));
     String stored =
-        origin
+        binding
             + "\n"
             + Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP)
             + ":"
@@ -66,16 +67,16 @@ public final class SecretStore implements Secrets {
   }
 
   @Override
-  public String read(long profileId, String origin) throws Exception {
+  public String read(long profileId, String binding) throws Exception {
     String value = prefs.getString("p" + profileId, "");
     if (value.isEmpty()) return "";
     int nl = value.indexOf('\n');
-    String bound = value.substring(0, nl);
-    if (!bound.equals(origin)) throw new SecurityException("Stored key is bound to " + bound);
+    if (nl < 0 || !value.substring(0, nl).equals(binding))
+      throw new SecurityException("Stored key is bound to a different endpoint or certificate pin.");
     String[] parts = value.substring(nl + 1).split(":", 2);
     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
     cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
-    cipher.updateAAD(aad(profileId, origin));
+    cipher.updateAAD(aad(profileId, binding));
     return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
   }
 

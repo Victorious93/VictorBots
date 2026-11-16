@@ -57,8 +57,9 @@ final class JobsScreen {
   // ------------------------------------------------------------------ creating
   void reviewProposal(JobProposals.Proposal p, long botId, long chatId, long msgId) {
     try {
-      Profile prof = p.backend.equals("PC") ? app.profiles.byKind(Policy.Kind.PC) : app.profiles.byKind(Policy.Kind.DROIDCOMMAND);
+      Profile prof = p.backend.equals("PC") ? app.profiles.runnerProfile() : app.profiles.byKind(Policy.Kind.DROIDCOMMAND);
       if (prof == null) throw new IllegalStateException("No " + (p.backend.equals("PC") ? "PC" : "DroidCommand") + " profile exists for this proposal.");
+      if (p.backend.equals("PC") && prof.runner() == null) throw new IllegalStateException(VictorLinux.NO_RUNNER + ". Add a runner URL to the profile under More → Providers, or use another PC profile.");
       JSONObject args = new JSONObject(p.args.toString());
       if (p.backend.equals("PC")) args.put("_workspace", p.workspace);
       long id = app.jobs.create(p.title, botId, chatId, msgId, p.backend, prof.id, p.tool, args, botId == 0 ? 1 : botId, 0);
@@ -87,14 +88,18 @@ final class JobsScreen {
   }
 
   private void newPcJob(long botId, long chatId, long msgId, String seed) {
-    Profile pc = app.profiles.byKind(Policy.Kind.PC);
+    Profile pc = app.profiles.runnerProfile();
     if (pc == null || !app.secrets.has(pc.id)) {
       ui.info("No PC profile", "Add your PC under More → Providers (with its access token) first.");
       return;
     }
+    if (pc.runner() == null) {
+      ui.info(VictorLinux.NO_RUNNER, "“" + pc.name + "” has no runner URL, so jobs cannot be sent from it. Add a runner URL to the profile under More → Providers.");
+      return;
+    }
     app.runAsync(() -> {
       try {
-        caps = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base))).capabilities();
+        caps = RunnerClient.forProfile(pc, app.secrets).capabilities();
         capsProfile = pc.id;
         h.act().runOnUiThread(() -> pcForm(pc, botId, chatId, msgId, seed));
       } catch (Exception e) {
@@ -244,7 +249,7 @@ final class JobsScreen {
     app.runAsync(() -> {
       try {
         Profile pc = app.profiles.get(j.profile);
-        RunnerClient c = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base)));
+        RunnerClient c = RunnerClient.forProfile(pc, app.secrets);
         Jobs.Remote r = what.equals("cancel") ? c.cancel(j.remoteId) : c.approve(j.remoteId, what.equals("approve"));
         app.jobs.applyRemote(j.id, r);
         Jobs.Remote ev = c.events(j.remoteId, app.jobs.get(j.id).lastSeq);
@@ -340,7 +345,7 @@ final class JobsScreen {
         if (a.optInt("verified") == 1 && f.isFile()) data = java.nio.file.Files.readAllBytes(f.toPath());
         else {
           Profile pc = app.profiles.get(j.profile);
-          data = new RunnerClient(pc, app.secrets.read(pc.id, Hosts.origin(pc.base))).artifact(j.remoteId, name, a.optLong("size"), a.optString("sha256"), 32L * 1024 * 1024);
+          data = RunnerClient.forProfile(pc, app.secrets).artifact(j.remoteId, name, a.optLong("size"), a.optString("sha256"), 32L * 1024 * 1024);
           f.getParentFile().mkdirs();
           try (FileOutputStream o = new FileOutputStream(f)) { o.write(data); }
           app.db.update("UPDATE artifacts SET verified=1,local_path=? WHERE id=?", "artifacts/" + j.id + "/" + name, a.optLong("id"));

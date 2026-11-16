@@ -13,6 +13,8 @@ import java.util.concurrent.Callable;
 /** Small programmatic view toolkit shared by all screens (the app deliberately uses no UI framework). */
 public final class Ui {
   public static final int BG = 0xff10120f, CARD = 0xff1c2019, FG = 0xfff0f3e9, MUTED = 0xffa5ae9e, ACCENT = 0xffb5f36c, WARN = 0xffffbe8a, BAD = 0xffff8a8a;
+  /** Dark neon accents used by the optional VictorLinux preset. Backgrounds are always dark. */
+  public static final int NEON_BG = 0xff0b0f1a, NEON_CYAN = 0xff00e5ff, NEON_MAGENTA = 0xffff2bd6;
   public final Context c;
 
   public Ui(Context c) {
@@ -74,6 +76,15 @@ public final class Ui {
     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
     p.setMargins(0, dp(6), 0, dp(6));
     b.setLayoutParams(p);
+    return b;
+  }
+
+  public Button neonButton(String label, Runnable run) {
+    Button b = button(label, run, false);
+    GradientDrawable d = bg(NEON_BG, 16);
+    d.setStroke(dp(2), NEON_CYAN);
+    b.setBackground(d);
+    b.setTextColor(NEON_CYAN);
     return b;
   }
 

@@ -49,7 +49,7 @@ public final class BotApp extends Application {
     monitor = new JobMonitor(db, jobs, id -> {
       Profile p = profiles.get(id);
       if (p == null) throw new IllegalStateException("The PC profile for this job was deleted.");
-      return new RunnerClient(p, secrets.read(p.id, Hosts.origin(p.base)));
+      return RunnerClient.forProfile(p, secrets);
     });
     // Anything left pending by a dead process failed; nothing is retried automatically.
     db.update("UPDATE messages SET status='error',role='system',body='Interrupted when the app process stopped. No automatic retry was sent.' WHERE status='pending' AND body!='Waiting for DroidCommand consent…'");

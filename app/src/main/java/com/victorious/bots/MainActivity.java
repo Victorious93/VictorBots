@@ -649,8 +649,8 @@ public final class MainActivity extends Activity implements Host {
 
   private Set<String> availableRequirements() {
     Set<String> s = new HashSet<>(Arrays.asList("files.attach"));
-    Profile pc = app.profiles.byKind(Policy.Kind.PC);
-    if (pc != null && app.secrets.has(pc.id)) {
+    Profile pc = app.profiles.runnerProfile();
+    if (pc != null && app.profiles.runnerReady(pc)) {
       s.add("pc.runner");
       s.add("pc.repo.read");
     }

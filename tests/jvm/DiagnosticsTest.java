@@ -19,7 +19,7 @@ public final class DiagnosticsTest {
     Report r0 = d.passive(e.profiles.get(pc));
     T.eq("PC without token is flagged at the saved step", State.FAILED, r0.saved.state);
     T.eq("passive check contacted nothing", 0, s.seen.size());
-    e.secrets.save(pc, Hosts.origin(s.base("/v1")), "tok-abcdef");
+    e.secrets.save(pc, e.profiles.get(pc).binding(), "tok-abcdef");
     T.eq("with token: saved OK", State.OK, d.passive(e.profiles.get(pc)).saved.state);
 
     // Probe: reachable + auth + model listed, but NO claim of a real reply.
@@ -78,10 +78,10 @@ public final class DiagnosticsTest {
     e.profiles.save(pc, "Test PC", Policy.Kind.PC, "https://127.0.0.1:1/v1", "my-model", s.fingerprint, null);
     T.eq("endpoint edit dropped the old key", false, e.secrets.has(pc));
     T.eq("no key -> probe refuses to call the PC anonymously", State.NOT_RUN, d.probe(e.profiles.get(pc)).reachable.state);
-    e.secrets.save(pc, "https://127.0.0.1:1", "tok-abcdef");
+    e.secrets.save(pc, e.profiles.get(pc).binding(), "tok-abcdef");
     T.eq("unreachable", State.FAILED, d.probe(e.profiles.get(pc)).reachable.state);
     e.profiles.save(pc, "Test PC", Policy.Kind.PC, s.base("/v1"), "my-model", "AB".repeat(32), null);
-    e.secrets.save(pc, Hosts.origin(s.base("/v1")), "tok-abcdef");
+    e.secrets.save(pc, e.profiles.get(pc).binding(), "tok-abcdef");
     Report r6 = d.probe(e.profiles.get(pc));
     T.eq("wrong pin fails at the TLS stage", State.FAILED, r6.reachable.state);
     T.check("says TLS", r6.reachable.detail.contains("TLS"));

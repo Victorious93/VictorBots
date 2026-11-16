@@ -46,6 +46,18 @@ Regex redaction leaked a token after `Authorization: Bearer`; diagnostics overwr
 * **Gradle** (`./gradlew :app:assembleDebug`) was not run for VictorBots (AGP unresolved in the environment).
 * Visual design was not reviewed beyond "it draws and navigates".
 
+## VictorLinux preset (optional) — change on top of 0.2.0
+
+Environment: Linux container, JDK 21, Android SDK platform 35 / build-tools 35.0.0 (downloaded for this run), Python 3. **No device, no emulator, no live VictorLinux gateway.**
+
+Run:
+* `bash scripts/test-jvm.sh` — all 12 suites pass, including the new `VictorLinuxTest` (217 checks: URL building, save validation, capabilities JSON parsing, capability discovery against a **real pinned TLS server** incl. wrong pin / 401 / 404 / malformed / oversized / redirect refused and not followed / timeout, runner-URL fallback and separate-runner credentials against **two real TLS servers**, pin change invalidating the key binding, migration of a pin-less-bound token, backup round trip and hostile imports, standalone guarantee). `DiagnosticsTest` was adjusted to store PC tokens under the new binding; no other existing test changed.
+* `bash scripts/build-sdk.sh` — builds and signs `VictorBots-0.2.0-debug.apk`; signer SHA-256 is still the public development key `23:CE:FC:35:…:5B:82`.
+* `bash scripts/build-test-sdk.sh` — the instrumentation APK compiles with the updated `SmokeInstrumentation` (PC tokens saved under the pin-aware binding; new Keystore origin+pin checks).
+* `python3 -I pc-runner/test_runner.py` — OK (1 skipped: the real-MCP check), runner code untouched.
+
+NOT run for this change: the instrumentation tests (`SmokeInstrumentation`; so the new Keystore pin-binding checks have **not** executed), Gradle. The new form (`ProvidersScreen.editVictorLinux`) was compiled but never rendered or clicked: layout, dark-neon styling in the dialog, inline error display and the Detect button's UI thread hand-off are unverified. `/victor/capabilities` and VictorLinux's `/v1` + port 8080 conventions come from the task description; the real VictorLinux was not contacted. Pointing the PC runner at VictorLinux is **not supported** (see `docs/VICTORLINUX.md`).
+
 ## 0.1.0 history (kept)
 
 

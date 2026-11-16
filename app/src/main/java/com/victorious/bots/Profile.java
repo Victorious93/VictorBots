@@ -95,6 +95,59 @@ public final class Profile {
         : "uncalibrated ~3 chars/token";
   }
 
+  /**
+   * What a stored secret is cryptographically bound to. For PC profiles with a pinned certificate the
+   * pin is part of it, so changing the pin makes the old token unreadable instead of silently sending
+   * it to a different certificate. Profiles without a pin (and every cloud profile) bind to the origin
+   * alone, exactly as before.
+   */
+  public static String binding(Policy.Kind kind, String base, String pinNormalised) {
+    String origin = Hosts.origin(base);
+    return kind == Policy.Kind.PC && pinNormalised != null && !pinNormalised.isEmpty() ? origin + "|pin=" + pinNormalised : origin;
+  }
+
+  public String binding() {
+    return binding(kind, base, pin);
+  }
+
+  /** Opt-in preset: a PC profile created through "Add VictorLinux PC". Nothing else depends on it. */
+  public boolean isVictorLinux() {
+    return kind == Policy.Kind.PC && VictorLinux.PRESET.equals(caps.optString("preset"));
+  }
+
+  /** Where the PC runner is reached and which credentials apply to it. */
+  public static final class Runner {
+    public final String base, origin, pin, binding;
+    /** Secret slot: the profile's own id when it shares the inference credentials, else its negative. */
+    public final long secretId;
+    public final boolean separate;
+
+    Runner(String base, String pin, long secretId, boolean separate) {
+      this.base = base;
+      this.origin = Hosts.origin(base);
+      this.pin = pin;
+      this.secretId = secretId;
+      this.separate = separate;
+      this.binding = pin.isEmpty() ? origin : origin + "|pin=" + pin;
+    }
+  }
+
+  /**
+   * The runner for this profile, or null when none is configured. Ordinary PC profiles keep the
+   * historical layout (/runner/v1 beside the inference API, same credentials). VictorLinux profiles
+   * have a runner only when the owner entered a runner URL; a runner on another origin never receives
+   * this profile's token or pin, it has its own.
+   */
+  public Runner runner() {
+    if (kind != Policy.Kind.PC) return null;
+    if (!isVictorLinux()) return new Runner(Hosts.runnerBase(base), pin, id, false);
+    String url = caps.optString("runner_url");
+    if (url.isEmpty()) return null;
+    String rb = Hosts.base(url);
+    if (Hosts.origin(rb).equals(Hosts.origin(base))) return new Runner(rb, pin, id, false);
+    return new Runner(rb, caps.optString("runner_pin"), -id, true);
+  }
+
   /** PC profiles must carry a bearer token; otherwise they are refused rather than called anonymously. */
   public static boolean requiresKey(Policy.Kind k) {
     return k == Policy.Kind.PC;

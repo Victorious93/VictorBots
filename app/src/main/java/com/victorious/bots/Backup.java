@@ -217,6 +217,18 @@ public final class Backup {
       JSONObject caps = new JSONObject();
       JSONObject in = o.optJSONObject("caps");
       if (in != null) for (String k : new String[] {"streaming", "tools", "images", "context_tokens", "reasoning_effort", "billing", "price_in_per_m", "price_out_per_m"}) if (in.has(k)) try { caps.put(k, in.get(k)); } catch (JSONException ignored) { }
+      if (in != null && VictorLinux.PRESET.equals(in.optString("preset"))) {
+        if (!kind.equals("PC") || pin.isEmpty()) { e.add(w + ": the VictorLinux preset needs a PC profile with a pinned certificate"); continue; }
+        try {
+          caps.put("preset", VictorLinux.PRESET);
+          String ru = in.optString("runner_url");
+          if (!ru.isEmpty()) {
+            ru = Hosts.base(ru);
+            caps.put("runner_url", ru);
+            if (!Hosts.origin(ru).equals(Hosts.origin(base))) caps.put("runner_pin", Rules.pin(in.optString("runner_pin")));
+          }
+        } catch (IllegalArgumentException | JSONException ex) { e.add(w + ": " + ex.getMessage()); continue; }
+      }
       if (profileByName.containsKey(name)) { p.c("provider profiles")[1]++; continue; }
       p.c("provider profiles")[0]++;
       if (write) {
