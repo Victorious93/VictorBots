@@ -1,0 +1,116 @@
+name: Android CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # DroidCommand debug signer pin (must not change without Don's approval).
+  DCA_SIGNER_PIN: 880051A6D95D38DD8D81E1931E1705480387D593C30943539968E6EF11A0C84D
+  # Public development key signer for VictorBots debug builds (README / VERIFICATION.md).
+  VB_DEBUG_SIGNER_SHA256: 23cefc35fa9b8ce1f5d3cce7b189aa340ff65051834cc8996eada08d6a0f5b82
+
+jobs:
+  build:
+    name: JVM tests + SDK build (required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Install platform 35 and build-tools 35.0.0
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Check DroidCommand signer pin is unchanged
+        run: |
+          grep -q "\"$DCA_SIGNER_PIN\"" app/src/main/java/com/victorious/bots/DcaBridge.java \
+            || { echo "::error::DroidCommand signer pin missing or changed in DcaBridge.java"; exit 1; }
+
+      - name: Cache pinned test jars
+        uses: actions/cache@v4
+        with:
+          path: build/libs
+          key: test-libs-${{ hashFiles('scripts/fetch-test-libs.sh') }}
+
+      - name: Rules checks (tests/RulesTest.java)
+        run: |
+          mkdir -p build/rules
+          javac -encoding UTF-8 -d build/rules app/src/main/java/com/victorious/bots/Rules.java tests/RulesTest.java
+          java -cp build/rules RulesTest
+
+      - name: Pure-Java test suites (scripts/test-jvm.sh)
+        run: bash scripts/test-jvm.sh
+
+      - name: SDK build (scripts/build-sdk.sh)
+        run: bash scripts/build-sdk.sh
+
+      - name: Verify APK signer is the documented debug key
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/sdk/VictorBots-0.2.0-debug.apk \
+            | grep -qi "certificate SHA-256 digest: $VB_DEBUG_SIGNER_SHA256" \
+            || { echo "::error::APK signer does not match the documented debug signer"; exit 1; }
+
+      - name: Instrumentation APK build (scripts/build-test-sdk.sh, build only)
+        run: bash scripts/build-test-sdk.sh
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VictorBots-debug-apk
+          path: app/build/sdk/VictorBots-0.2.0-debug.apk
+          if-no-files-found: error
+
+  pc-runner:
+    name: PC runner Python tests (required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run pc-runner tests
+        working-directory: pc-runner
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          python3 -I test_runner.py -v
+
+  gradle:
+    name: Gradle assembleDebug (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+      - run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: ./gradlew :app:assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleDebug
