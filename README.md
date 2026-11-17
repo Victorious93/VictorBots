@@ -27,6 +27,7 @@ VictorBots owns bot profiles, conversations, team coordination, memory controls 
 
 | Area | Behaviour |
 |---|---|
+| **Look** | Fleet neon theme: dark surfaces only, background `#0B0F1A`, cyan `#00E5FF` for primary actions and links, magenta `#FF2BD6` for secondary accents, English-only UI. Colours live in `Ui.java` and `res/values/colors.xml`; `tests/jvm/ThemeTest.java` fails on light backgrounds, the old lime/olive colours or low text contrast. Checked on an Android 9 (API 28) emulator only, not a physical device. |
 | **Providers** | Several named profiles: cloud (OpenAI-compatible HTTPS) and PC (authenticated HTTPS). Each bot inherits the default or picks its own profile **and** model. Model discovery when the server supports it; manual id otherwise. Keys are encrypted with Android Keystore and cryptographically bound to *profile + endpoint origin*: editing an endpoint can never send the old key to a new host. |
 | **Policy** | Owner policy (`Cloud allowed` / `PC first, cloud only if I confirm` / `PC only`; `This device only` is shown but unavailable). Enforced in **one place** (`Gateway`) for every kind of request: chat, routing, memory suggestions, summaries, routines, team turns, diagnostics, fallback. A bot can only make policy *stricter*. Background work never falls back to cloud. |
 | **Diagnostics** | Five separate states: configuration saved · host reachable · credentials accepted · model available · **real reply received**. Owner-initiated live test names the destination and possible cost. Categorised errors (timeout, TLS, auth, model unavailable, malformed, unsupported). Requested vs server-reported model, tokens in/out (`unknown` when not reported), latency, first-token time. Capabilities shown as *configured / advertised / tested*. |
@@ -34,7 +35,7 @@ VictorBots owns bot profiles, conversations, team coordination, memory controls 
 | **Memory** | Per bot, editable, searchable (SQLite FTS4), deletable, with provenance. Optional project-shared memory (off by default). Suggestions are inert until you accept them and are produced only through the policy gateway. |
 | **Teams** | Group chats with @mentions, mute, reply modes (mentions only / Chief of Staff routing / all / developer→QA review). Every round is capped by turns, tokens, time and hand-off depth, has a Stop button, suppresses duplicate answers, survives rotation and process death. Bot messages are untrusted text: they cannot change policy, grant anything or start work. |
 | **Jobs** | Persistent records with correlation ids, states reported by the backend (queued / running / awaiting approval / completed / failed / cancelled), redacted bounded logs, artifacts with SHA-256 verification, safe previews. **Completion only ever comes from a backend report.** Uncertain sends become *outcome unknown* and are never repeated automatically. |
-| **VictorLinux preset (optional)** | *More → Providers → Add VictorLinux PC*: host + port (default 8080), `https://<host>:<port>/v1`, model `victor-local`, token **and** certificate pin required, optional capability detection and an optional separate runner URL. Opt-in; see `docs/VICTORLINUX.md`. |
+| **VictorLinux preset (optional)** | *More → Providers → Add VictorLinux PC*: host + port (default 8080), `https://<host>:<port>/v1`, model `victor-local`, token **and** certificate pin required, optional capability detection and an optional separate runner URL. Opt-in; see `docs/VICTORLINUX.md`. **Not verified against a live VictorLinux gateway or on a device** (see `VERIFICATION.md`). |
 | **PC runner** | Small authenticated HTTPS service (`pc-runner/`, Python stdlib): explicit workspaces, owner-defined commands only, approvals with expiry, cancellation, per-workspace write lock (or git-worktree isolation), routines, inference pass-through, optional read-only MCP bridge. |
 | **DroidCommand** | Text chat via `COMPANION_ASSIST` (unchanged). Execution via the **new separate `COMPANION_EXEC` contract** implemented in the droidcommand-AI repo (branch `feature/companion-exec-contract`). VictorBots has no approve button of its own. |
 | **Skills & files** | Four bundled workflows (repo review, APK crash diagnosis, release prep, project plan) plus your own, with versions and declared needs; a skill is only text and grants nothing. Attach text/source/logs/images through the document picker with size/type limits; unsupported formats (PDF, Office, archives) are refused with a reason. File content is quoted as untrusted data. |
@@ -99,6 +100,20 @@ adb shell am instrument -w com.victorious.bots.test/com.victorious.bots.test.Smo
 ## Manual
 
 How-to: [MANUAL.md](MANUAL.md) (setup, security, backup and troubleshooting). What was and was not tested: [VERIFICATION.md](VERIFICATION.md).
+
+## Roadmap
+
+**Planned, not built.** The items below are not in the app yet (the parentheses note what already exists); the full proposal, with what is already built, the open questions and the suggested pull-request order, is in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
+- Better chat: markdown, per-message copy, retry/regenerate (streaming and Stop already exist).
+- Voice: dictation and read-aloud, off by default.
+- Scheduled background bots: templates and notifications on top of the existing routines.
+- DroidCommand phone actions, only through DroidCommand's own `COMPANION_EXEC` contract and its Allow screen, never automatic.
+- Home widget and quick-ask.
+- Bot packs: first-party packs in a planned `Victorious93/victorbots-packs` repository, plain JSON with no executable code, installed over HTTPS after a review screen.
+- Per-bot folders (Storage Access Framework) that a file manager such as VictorFiles can browse.
+- Per-bot chat models, including a model choice for DroidCommand bots that needs a new contract in droidcommand-AI (today `COMPANION_ASSIST` cannot carry or list models).
+- Optional capability tiers (non-root default; Shizuku/ShizukuV and root only through DroidCommand, opt-in, with an OK for every action).
 
 ## License
 
