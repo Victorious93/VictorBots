@@ -42,7 +42,7 @@ VictorBots owns bot profiles, conversations, team coordination, memory controls 
 | **Skills & files** | Four bundled workflows (repo review, APK crash diagnosis, release prep, project plan) plus your own, with versions and declared needs; a skill is only text and grants nothing. Attach text/source/logs/images through the document picker with size/type limits; unsupported formats (PDF, Office, archives) are refused with a reason. File content is quoted as untrusted data. |
 | **Backup** | Versioned export (v2); restore with preview, conflict handling (keep mine / add copies), validation, one transaction, integrity check. Never exports keys, avatars, logs or policy. Reads 0.1.0 (v1) backups. |
 | **Routines** | Opt-in, created switched off. PC routines run on the PC runner's clock (continue when the phone is offline). Phone routines use Android's inexact JobScheduler (≈15 min at best) and the same policy. A run is *succeeded* only after its work finished. |
-| **Connectors** | Read-only repository access through MCP servers *your PC runner is configured to expose*, enabled per bot, revocable. VictorBots installs nothing. |
+| **Connectors** | Read-only access through MCP servers *your PC runner is configured to expose*, enabled per bot, revocable. Owner-driven attach, or (opt-in per bot, workspace chosen by you) the bot's model can call the allow-listed read-only tools itself, bounded and listed under each reply. No write/exec tools. VictorBots installs nothing. *Model-driven calls: unit-tested only, not run on a device or with a real model.* |
 
 ## Screenshots
 

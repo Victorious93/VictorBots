@@ -74,6 +74,34 @@ public final class ProviderTest {
     T.eq("stream model reported", "m-stream", sr.modelReported);
     T.eq("include_usage requested for stream", true, new JSONObject(s.seen.get(s.seen.size() - 1).body).getJSONObject("stream_options").getBoolean("include_usage"));
 
+    // Tool calls: sent as OpenAI "tools", and streamed fragments are reassembled by index.
+    s.on("/v1/chat/completions", ex -> TestServer.sse(ex, Arrays.asList(
+        "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"repo__read\",\"arguments\":\"\"}}]}}]}",
+        "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\"}}]}}]}",
+        "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"/a\\\"}\"}},{\"index\":1,\"id\":\"call_2\",\"function\":{\"name\":\"repo__ls\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}",
+        "[DONE]"), 5));
+    Provider.Cfg tcfg = cfg(s, "k", s.fingerprint);
+    tcfg.tools = new JSONArray().put(new JSONObject().put("type", "function").put("function", new JSONObject().put("name", "repo__read").put("parameters", new JSONObject().put("type", "object"))));
+    Provider.Reply tr = Provider.chat(tcfg, TURNS, true, null, null);
+    T.eq("two streamed tool calls assembled", 2, tr.toolCalls.size());
+    T.eq("fragmented arguments joined", "{\"path\":\"/a\"}", tr.toolCalls.get(0).getJSONObject("function").getString("arguments"));
+    T.eq("id and name kept", "call_1|repo__read", tr.toolCalls.get(0).getString("id") + "|" + tr.toolCalls.get(0).getJSONObject("function").getString("name"));
+    JSONObject treq = new JSONObject(s.seen.get(s.seen.size() - 1).body);
+    T.eq("tools offered in the request", "repo__read", treq.getJSONArray("tools").getJSONObject(0).getJSONObject("function").getString("name"));
+    List<Rules.Turn> withTool = new ArrayList<>(TURNS);
+    Rules.Turn asked = new Rules.Turn("assistant", "");
+    asked.toolCalls = new JSONArray().put(tr.toolCalls.get(0));
+    withTool.add(asked);
+    Rules.Turn answer = new Rules.Turn("tool", "file text");
+    answer.toolCallId = "call_1";
+    withTool.add(answer);
+    Provider.chat(tcfg, withTool, true, null, null);
+    JSONArray msgs = new JSONObject(s.seen.get(s.seen.size() - 1).body).getJSONArray("messages");
+    T.eq("assistant tool_calls echoed", "call_1", msgs.getJSONObject(2).getJSONArray("tool_calls").getJSONObject(0).getString("id"));
+    T.eq("tool result carries tool_call_id", "call_1", msgs.getJSONObject(3).getString("tool_call_id"));
+    Provider.chat(cfg(s, "k", s.fingerprint), TURNS, true, null, null);
+    T.eq("no tools field unless offered", false, new JSONObject(s.seen.get(s.seen.size() - 1).body).has("tools"));
+
     // Cancel mid-stream tears the connection down and reports CANCELLED.
     s.on("/v1/chat/completions", ex -> TestServer.sse(ex, Arrays.asList(
         "{\"choices\":[{\"delta\":{\"content\":\"a\"}}]}",

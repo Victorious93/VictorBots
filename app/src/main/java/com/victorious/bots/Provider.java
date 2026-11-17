@@ -9,7 +9,7 @@ import org.json.*;
 
 /**
  * Bounded HTTPS client for OpenAI-compatible chat backends. Never follows redirects, never retries,
- * never logs credentials, and never executes tool calls. Only features the owner configured are sent.
+ * never logs credentials, and never executes tool calls (it only relays them; see ToolLoop). Only features the owner configured are sent.
  */
 public final class Provider {
   public static final int MAX_RESPONSE = 2 * 1024 * 1024;
@@ -19,6 +19,8 @@ public final class Provider {
     public int connectMs = 15000, readMs = 90000;
     /** Whether the profile enables sending image parts. */
     public boolean images;
+    /** OpenAI-style function tool definitions to offer, or null. Set only by Gateway. */
+    public JSONArray tools;
   }
 
   /** Token counts are null when the provider did not report them: "unknown", never zero. */
@@ -178,6 +180,16 @@ public final class Provider {
     JSONArray arr = new JSONArray();
     for (Rules.Turn t : turns) {
       JSONObject m = new JSONObject().put("role", t.role);
+      if (t.role.equals("tool")) {
+        m.put("tool_call_id", t.toolCallId).put("content", t.content);
+        arr.put(m);
+        continue;
+      }
+      if (t.toolCalls != null) {
+        m.put("content", t.content.isEmpty() ? JSONObject.NULL : t.content).put("tool_calls", t.toolCalls);
+        arr.put(m);
+        continue;
+      }
       if (!t.images.isEmpty()) {
         if (!images)
           throw new IllegalArgumentException(
@@ -209,6 +221,7 @@ public final class Provider {
       JSONObject req = new JSONObject().put("model", cfg.model).put("messages", messages(turns, cfg.images)).put("stream", stream);
       if (stream) req.put("stream_options", new JSONObject().put("include_usage", true));
       if (!cfg.reasoning.isEmpty()) req.put("reasoning_effort", cfg.reasoning);
+      if (cfg.tools != null && cfg.tools.length() > 0) req.put("tools", cfg.tools).put("tool_choice", "auto");
       byte[] body = req.toString().getBytes(StandardCharsets.UTF_8);
       c.setFixedLengthStreamingMode(body.length);
       try (OutputStream o = c.getOutputStream()) {
@@ -315,13 +328,35 @@ public final class Provider {
         if (sink != null) sink.delta(piece);
       }
       JSONArray tc = delta.optJSONArray("tool_calls");
-      if (tc != null) for (int i = 0; i < tc.length(); i++) r.toolCalls.add(tc.getJSONObject(i));
+      if (tc != null) for (int i = 0; i < tc.length(); i++) mergeToolDelta(r.toolCalls, tc.getJSONObject(i));
     }
     r.text = text.toString();
     if (cancel != null && cancel.isCancelled())
       throw new ProviderError(ProviderError.Category.CANCELLED, 0, "Stopped.", true);
-    if (!done && text.length() == 0)
+    if (!done && text.length() == 0 && r.toolCalls.isEmpty())
       throw new ProviderError(ProviderError.Category.MALFORMED, 200, "The stream ended without data.", true);
+  }
+
+  /**
+   * Streamed tool calls arrive as fragments keyed by "index": the first carries id and function name,
+   * later ones append to function.arguments. Reassemble them into whole OpenAI tool_call objects.
+   */
+  static void mergeToolDelta(List<JSONObject> calls, JSONObject d) throws JSONException, ProviderError {
+    int idx = d.optInt("index", calls.size());
+    if (idx < 0 || idx > 31) throw new ProviderError(ProviderError.Category.MALFORMED, 200, "Tool call index out of range.", true);
+    while (calls.size() <= idx)
+      calls.add(new JSONObject().put("type", "function").put("id", "").put("function", new JSONObject().put("name", "").put("arguments", "")));
+    JSONObject c = calls.get(idx);
+    if (d.has("id") && !d.isNull("id")) c.put("id", d.optString("id"));
+    JSONObject f = d.optJSONObject("function");
+    if (f == null) return;
+    JSONObject cf = c.getJSONObject("function");
+    if (f.has("name") && !f.isNull("name")) cf.put("name", cf.optString("name") + f.optString("name"));
+    if (f.has("arguments") && !f.isNull("arguments")) {
+      String a = cf.optString("arguments") + f.optString("arguments");
+      if (a.length() > MAX_RESPONSE) throw new ProviderError(ProviderError.Category.TOO_LARGE, 0, "Response exceeds the size limit.", true);
+      cf.put("arguments", a);
+    }
   }
 
   /** GET {base}/models → ids. Models listing is optional on some servers (then enter the id manually). */

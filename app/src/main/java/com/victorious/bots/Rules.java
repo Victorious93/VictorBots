@@ -47,6 +47,10 @@ public final class Rules {
     public final String role, content;
     /** data: URIs of owner-selected images; empty for text-only turns. */
     public final List<String> images;
+    /** Assistant turn that asked for tools (OpenAI "tool_calls" array), else null. */
+    public org.json.JSONArray toolCalls;
+    /** For role "tool": the id of the call this answers. */
+    public String toolCallId = "";
 
     public Turn(String r, String c) {
       this(r, c, new ArrayList<String>());
