@@ -43,7 +43,16 @@ VictorBots owns bot profiles, conversations, team coordination, memory controls 
 
 ## Screenshots
 
-None yet for 0.2.0. The two older images in `docs/screenshots/` show the 0.1.0 interface (different theme and tabs), so they are not used here.
+<p align="center">
+  <img src="docs/screenshots/0.2.0-bots-list.png" alt="Bots list: home screen with the Chief of Staff and Android Engineer starter bots" width="240" />
+  <img src="docs/screenshots/0.2.0-chat.png" alt="Chat screen for the Chief of Staff bot, empty conversation with the message box and Send button" width="240" />
+  <img src="docs/screenshots/0.2.0-chat-menu-dialog.png" alt="Bot and conversations menu dialog opened from a chat" width="240" />
+  <img src="docs/screenshots/0.2.0-jobs.png" alt="Jobs screen with no jobs yet and a New job button" width="240" />
+  <img src="docs/screenshots/0.2.0-more.png" alt="More screen listing Providers, Usage and Memory" width="240" />
+  <img src="docs/screenshots/0.2.0-providers-policy.png" alt="Providers and policy screen showing the inference policy and default profile" width="240" />
+</p>
+
+Real captures of the 0.2.0 debug build (built with `scripts/build-sdk.sh`, fresh install) on an Android 9 (API 28) emulator, not a physical device. They show the empty first-run state: the default starter bots, no conversations or jobs, and no provider configured, so no model replies appear.
 
 ## Install / download
 
