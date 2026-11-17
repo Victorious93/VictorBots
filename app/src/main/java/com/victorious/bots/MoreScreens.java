@@ -356,8 +356,27 @@ final class MoreScreens {
       LinearLayout c = ui.card(body);
       c.addView(ui.heading(r.optString("bname") + " → " + r.optString("connector"), 16));
       c.addView(ui.text("Tools allowed: " + r.optString("tools"), 12, Ui.MUTED));
+      boolean auto = r.optInt("auto") == 1 && !r.optString("workspace").isEmpty();
+      c.addView(ui.text(auto ? "The bot may call these tools itself in workspace “" + r.optString("workspace") + "”. Read-only; each call is listed under its reply." : "Owner-driven only: the bot cannot call these tools; you attach a read from the chat.", 12, auto ? Ui.ACCENT : Ui.MUTED));
+      c.addView(ui.button(auto ? "Change or stop model use" : "Let the bot call these tools", () -> modelUse(r.optLong("bot"), r.optString("connector")), false));
       c.addView(ui.button("Revoke", () -> { app.db.update("DELETE FROM bot_connectors WHERE bot=? AND connector=?", r.optLong("bot"), r.optString("connector")); h.refresh(); }, false));
     }
+  }
+
+  /** Asks for the workspace the bot's own tool calls run in. Empty = switch model use off. */
+  private void modelUse(long bot, String connector) {
+    LinearLayout f = ui.column();
+    f.setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(12));
+    f.addView(ui.text("Lets this bot's model request the connector's read-only tools while you chat, only for chats you start and only on a provider profile with tool calls switched on. The runner still enforces its read-only list, and the results are sent to the model's provider, so a cloud provider would see them. Leave the workspace empty to keep reads owner-driven.", 12, Ui.MUTED));
+    JSONObject cur = app.db.one("SELECT workspace FROM bot_connectors WHERE bot=? AND connector=?", bot, connector);
+    EditText ws = ui.field(f, "Workspace id on the runner", cur == null ? "" : cur.optString("workspace"), false);
+    ui.form("Model use of “" + connector + "”", f, "Save", () -> {
+      String w = ws.getText().toString().trim();
+      if (!w.isEmpty() && !w.matches("[A-Za-z0-9_-]{1,32}")) throw new IllegalArgumentException("Workspace ids use letters, digits, - and _ (max 32).");
+      app.db.update("UPDATE bot_connectors SET workspace=?,auto=? WHERE bot=? AND connector=?", w, w.isEmpty() ? 0 : 1, bot, connector);
+      h.refresh();
+      return true;
+    }, null);
   }
 
   private void offer(JSONArray conns, Profile pc) {
@@ -374,8 +393,11 @@ final class MoreScreens {
           List<JSONObject> bots = app.db.rows("SELECT id,name FROM bots ORDER BY id");
           String[] bn = new String[bots.size()];
           for (int i = 0; i < bn.length; i++) bn[i] = bots.get(i).optString("name");
-          ui.choose("Enable for which bot?", bn, k -> app.db.update("INSERT OR REPLACE INTO bot_connectors(bot,connector,profile,tools) VALUES(?,?,?,?)", bots.get(k).optLong("id"), conn.optString("id"), pc.id, conn.optJSONArray("tools").toString()));
-          h.refresh();
+          ui.choose("Enable for which bot?", bn, k -> {
+            long bot = bots.get(k).optLong("id");
+            app.db.update("INSERT OR REPLACE INTO bot_connectors(bot,connector,profile,tools) VALUES(?,?,?,?)", bot, conn.optString("id"), pc.id, conn.optJSONArray("tools").toString());
+            modelUse(bot, conn.optString("id"));
+          });
         } catch (JSONException e) {
           h.error(e);
         }

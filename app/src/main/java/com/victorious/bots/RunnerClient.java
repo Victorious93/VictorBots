@@ -212,6 +212,11 @@ public final class RunnerClient {
     return call("GET", "/connectors", null, null);
   }
 
+  public JSONObject connectorTools(String connector, String workspace) throws ProviderError {
+    if (!workspace.matches("[A-Za-z0-9_-]{1,32}")) throw new IllegalArgumentException("Bad workspace id.");
+    return call("GET", "/connectors/" + enc(connector) + "/tools?workspace=" + workspace, null, null);
+  }
+
   public JSONObject connectorCall(String connector, String tool, JSONObject args, String workspace) throws ProviderError {
     try {
       return call("POST", "/connectors/" + enc(connector) + "/call", new JSONObject().put("tool", tool).put("args", args).put("workspace", workspace), null);

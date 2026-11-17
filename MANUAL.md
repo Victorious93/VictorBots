@@ -66,7 +66,7 @@ Jobs tab. Create a draft (PC runner tool, DroidCommand capability, or manual not
 * Skills: type `/repo-review` etc. in a message. Needs are informational.
 * Files: 📎 in a chat. Text/source ≤ 60,000 characters (larger is refused, not cut), logs are visibly shortened keeping the end, images ≤ 4 MB and only for profiles with image input switched on. PDFs, Office files, archives and APKs are refused with a reason.
 * Routines: More → Routines. Created off. See §1 for where they run and what happens when a device is offline.
-* Connectors: configure an MCP server in the runner's config (read-only tool allow-list), then More → Connectors → Load → enable for a bot. In chat: 📎 → *Read from a repository connector*.
+* Connectors: configure an MCP server in the runner's config (read-only tool allow-list), then More → Connectors → Load → enable for a bot. In chat: 📎 → *Read from a repository connector*. **Letting the bot call tools itself:** when you enable a connector (or later via *Let the bot call these tools*) enter the runner workspace id. Then, in chats you start, a model on a profile with **tool calls switched on** may request the connector's read-only tools (max 8 calls per message); each call is listed under the reply and what it reads is sent to that profile's provider, so prefer a PC profile. Leave the workspace empty to keep reads owner-driven. Writes and commands are never model-callable: they remain Jobs you approve.
 * Backup: More → Backup. Restore previews first; default keeps your data on conflict. Keys/tokens are never in a backup, so re-enter them after restoring on a new phone.
 
 ## 9. Troubleshooting

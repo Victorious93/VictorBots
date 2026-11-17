@@ -1,4 +1,4 @@
-# Victorious Framework — VictorBots architecture (0.2.0)
+# Victorious Framework — VictorBots architecture (0.2.0 + tool loop, schema v3)
 
 ## Layers
 
@@ -30,6 +30,8 @@ Android adapters: Store (SQLiteOpenHelper) + AndroidDb · SecretStore (Keystore)
 
 * **Optional VictorLinux preset** (`VictorLinux`, `docs/VICTORLINUX.md`): a PC profile marked `caps.preset`, with a required token and pin, an optional separate runner URL (`Profile.runner()`; a runner on another origin has its own token slot `-profileId` and pin) and a capability probe (`GET /victor/capabilities`, pinned, no redirects) that only pre-selects the tool-call switch. No schema change; nothing depends on it when no such profile exists.
 
+* **Model-driven read-only tools** (`ToolLoop`, schema v3). Per bot, per connector the owner sets a runner workspace and switches "bot may call" on (`bot_connectors.auto/workspace`; existing rows stay off). In an owner-initiated `CHAT` only, the model is offered `connector__tool` functions = the runner's read-only allow-list ∩ the tools enabled for that bot; `Gateway` drops tools for every other purpose and for profiles with tool calls off. The loop is bounded (6 model rounds, 8 calls, 8k-char arguments, 16k/60k-char results, no repeated identical call); every model request still goes through `Gateway`; results are `Untrusted` data; unknown/disabled names are answered with an error and never reach the runner; each call is listed under the reply (name, ok, time, size, never the output). Tool output goes to the model's provider, so the send confirmation names the host.
+
 ## Schema v2 (additions)
 `profiles`, `usage` (ledger), `memories` + `memory_fts` (FTS4, delete trigger), `chat_members`, `rounds`, `jobs`, `job_events`, `artifacts`, `skills`, `attachments`, `routines`, `routine_runs`, `bot_connectors`; new columns on `bots` (uid, profile, model, policy, project, reasoning, role_hint), `chats` (nullable bot, kind, config, summary, uid), `messages` (author, meta, kind), `tasks` (uid).
 
@@ -39,4 +41,4 @@ Android adapters: Store (SQLiteOpenHelper) + AndroidDb · SecretStore (Keystore)
 * **DroidCommand**: text via `COMPANION_ASSIST` (unchanged, never executes). Execution via `COMPANION_EXEC` v1, implemented in `droidcommand-AI` (`core-security/CompanionExec.kt`, branch `feature/companion-exec-contract`): paired caller, discover/execute/receipt, request id + expiry, Allow tap in DroidCommand, existing `SecureToolExecutor`/audit, receipts. VictorBots' `DcaExecCodec` maps only `executed` to `COMPLETED`. VictorBots adds no accessibility/root/shell stack.
 
 ## Known limits (deliberate)
-Chat history is private app data, not separately encrypted. No background service: job polling and team rounds run while the process is alive; the PC keeps working without the phone. No webhooks. No tool-call loop: connector reads are owner-driven. DroidCommand cannot take part in unattended work. Token counts are estimates unless the server reports usage.
+Chat history is private app data, not separately encrypted. No background service: job polling and team rounds run while the process is alive; the PC keeps working without the phone. No webhooks. Tool calls are limited to the read-only connector loop below (`ToolLoop`); no write/exec tool is model-callable, those stay Jobs. DroidCommand cannot take part in unattended work. Token counts are estimates unless the server reports usage.

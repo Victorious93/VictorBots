@@ -572,12 +572,10 @@ class Runner:
         return {"uid": uid, "next_run": nxt, "paused": bool(paused)}
 
     # ----- MCP connectors (read-only allow-list) -----
-    def connector_call(self, cid, tool, args, wsid):
+    def _connector_client(self, cid, wsid):
         c = self.cfg.connectors.get(cid)
         if not c:
             raise KeyError("unknown connector")
-        if tool not in c.get("allow_tools", []):
-            raise PermissionError("tool is not on this connector's read-only allow-list")
         if wsid not in self.cfg.workspaces:
             raise ValueError("unknown workspace")
         key = (cid, wsid)
@@ -588,8 +586,31 @@ class Runner:
                 cl = McpClient(argv)
                 cl.start()
                 self.connectors[key] = cl
+        return c, cl
+
+    def connector_call(self, cid, tool, args, wsid):
+        c = self.cfg.connectors.get(cid)
+        if not c:
+            raise KeyError("unknown connector")
+        if tool not in c.get("allow_tools", []):
+            raise PermissionError("tool is not on this connector's read-only allow-list")
+        c, cl = self._connector_client(cid, wsid)
         res = cl.call(tool, args)
         return res
+
+    def connector_tools(self, cid, wsid):
+        """Schemas of the connector's tools, limited to the owner's read-only allow-list. A tool the
+        server offers but the allow-list omits is never described, so a model cannot even ask for it."""
+        c, cl = self._connector_client(cid, wsid)
+        allow = set(c.get("allow_tools", []))
+        out = []
+        for t in cl.list_tools():
+            if t.get("name") in allow:
+                schema = t.get("inputSchema")
+                if not isinstance(schema, dict) or schema.get("type") != "object":
+                    schema = {"type": "object", "properties": {}}
+                out.append({"name": t["name"], "description": redact(str(t.get("description", "")))[:1000], "input_schema": schema})
+        return {"connector": cid, "workspace": wsid, "read_only": True, "tools": out}
 
 
 class McpClient:
@@ -645,6 +666,19 @@ class McpClient:
                 except Exception: pass
                 raise TimeoutError("MCP call timed out")
             return result
+
+    def list_tools(self):
+        tools, cursor = [], None
+        for _ in range(10):  # bounded paging
+            r = self.rpc("tools/list", {"cursor": cursor} if cursor else {}, timeout=30)
+            if "error" in r:
+                raise RuntimeError("MCP error: " + str(r["error"].get("message", ""))[:200])
+            res = r.get("result", {})
+            tools.extend(t for t in res.get("tools", []) if isinstance(t, dict))
+            cursor = res.get("nextCursor")
+            if not cursor or len(tools) >= 500:
+                break
+        return tools[:500]
 
     def call(self, tool, args):
         r = self.rpc("tools/call", {"name": tool, "arguments": args}, timeout=30)
@@ -815,6 +849,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
         if p == "/connectors" and method == "GET":
             return self.send_json(200, {"connectors": [{"id": k, "type": v.get("type"), "tools": v.get("allow_tools", []), "read_only": True} for k, v in r.cfg.connectors.items()]})
+        m = re.fullmatch(r"/connectors/([A-Za-z0-9_-]{1,40})/tools", p)
+        if m and method == "GET":
+            return self.send_json(200, r.connector_tools(m.group(1), (qs.get("workspace") or [""])[0]))
         m = re.fullmatch(r"/connectors/([A-Za-z0-9_-]{1,40})/call", p)
         if m and method == "POST":
             b = self.body()

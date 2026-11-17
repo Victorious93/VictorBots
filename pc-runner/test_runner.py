@@ -208,6 +208,11 @@ for line in sys.stdin:
     meth = m["method"]
     if meth == "initialize":
         res = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "serverInfo": {"name": "fixture", "version": "0"}}
+    elif meth == "tools/list":
+        res = {"tools": [
+            {"name": "read_text_file", "description": "Read a file token=abcdef123456", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+            {"name": "write_file", "description": "Write a file", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}},
+            {"name": "no_schema"}]}
     elif meth == "tools/call":
         a = m["params"]["arguments"]
         t = m["params"]["name"]
@@ -245,6 +250,16 @@ class McpFixture(unittest.TestCase):
             r.connector_call("nope", "read_text_file", {}, "main")
         with self.assertRaises(ValueError):
             r.connector_call("repo-files", "read_text_file", {}, "ghost-workspace")
+        # The model-facing tool list contains only allow-listed tools, with their schemas.
+        lst = r.connector_tools("repo-files", "main")
+        self.assertEqual([x["name"] for x in lst["tools"]], ["read_text_file"])
+        self.assertEqual(lst["tools"][0]["input_schema"]["required"], ["path"])
+        self.assertNotIn("abcdef123456", json.dumps(lst))
+        self.assertNotIn("write_file", json.dumps(lst))
+        with self.assertRaises(ValueError):
+            r.connector_tools("repo-files", "ghost-workspace")
+        with self.assertRaises(KeyError):
+            r.connector_tools("nope", "main")
         r.stop.set()
 
 

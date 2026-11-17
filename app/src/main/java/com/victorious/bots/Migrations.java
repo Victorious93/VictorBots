@@ -10,7 +10,7 @@ import java.util.List;
  * foreign_key_check afterwards.
  */
 public final class Migrations {
-  public static final int VERSION = 2;
+  public static final int VERSION = 3;
 
   /** The schema shipped in VictorBots 0.1.0 (database version 1), unchanged. */
   public static List<String> v1() {
@@ -156,6 +156,17 @@ public final class Migrations {
     return s;
   }
 
+  /**
+   * 0.3.0: a bot may call a connector's read-only tools itself. Existing rows keep today's behaviour
+   * (owner-driven reads only): {@code auto} defaults to 0 and {@code workspace} to '' (unset).
+   */
+  public static List<String> v3() {
+    List<String> s = new ArrayList<>();
+    s.add("ALTER TABLE bot_connectors ADD COLUMN workspace TEXT NOT NULL DEFAULT ''");
+    s.add("ALTER TABLE bot_connectors ADD COLUMN auto INTEGER NOT NULL DEFAULT 0");
+    return s;
+  }
+
   public static void run(Db db, List<String> sql) {
     for (String s : sql) db.exec(s);
   }
@@ -164,6 +175,7 @@ public final class Migrations {
   public static void upgrade(Db db, int from) {
     if (from < 1) run(db, v1());
     if (from < 2) run(db, v2());
+    if (from < 3) run(db, v3());
   }
 
   private Migrations() {}

@@ -63,6 +63,16 @@ Regex redaction leaked a token after `Authorization: Bearer`; diagnostics overwr
 * **Gradle** (`./gradlew :app:assembleDebug`) was not run for VictorBots (AGP unresolved in the environment).
 * Visual design was not reviewed beyond "it draws and navigates".
 
+## Model-driven connector tools — change on top of 0.2.0
+
+A bot's model can now request a connector's **read-only** MCP tools during an owner-initiated chat (`ToolLoop`, schema v3, runner `GET /connectors/{id}/tools`). Environment: Linux container, JDK 21, Python 3.13. **No Android SDK, no device, no emulator, no real MCP server, no real model.**
+
+Run and passed:
+* `bash scripts/test-jvm.sh` — all 17 suites, 0 failed. New: `ToolLoopTest` (40 checks, scripted model + fake runner host through the real `Gateway`, real SQLite): only enabled tools are described, a write tool / invented name / bad JSON / duplicate / missing id never reaches the runner and still gets an answer, results are `Untrusted`-wrapped and keep their call id, rounds/calls/size bounded and the last request offers no tools, runner down falls back to a plain answer with a notice, tools are dropped for every non-`CHAT` purpose and for a profile with tool calls off, policy refusal makes no call, cancel stops before a tool runs. `ProviderTest` (+8): fragmented streamed `tool_calls` are reassembled by index, `tools` / assistant `tool_calls` / `tool_call_id` are encoded, nothing extra is sent when no tools are offered. `MigrationTest` (+5): v3 columns, a 0.2.0 connector row survives with model use off. `GatewayTest`'s source scan still passes (no second path to `Provider.chat`).
+* `python3 -I pc-runner/test_runner.py` — 15 run, OK (1 skipped real-MCP). New assertions: `connector_tools` returns only allow-listed tools with their schemas, redacts descriptions, rejects an unknown connector/workspace (against the local fixture server only).
+
+NOT run / NOT verified: `BotApp`, `MoreScreens` and `MainActivity` changes (the `RunnerHost` adapter, the "Let the bot call these tools" form, the confirmation text and the "Tools used" footer) **were not compiled or run** here because no Android SDK is available; build with `scripts/build-sdk.sh` and click through them. Instrumentation tests not run. No real model was asked to call a tool: tool-call quality, argument validity and provider quirks (e.g. servers that reject `tool_choice`, or models that ignore `tools`) are untested. The real `@modelcontextprotocol/server-filesystem` `tools/list` response was not observed; only the fixture's.
+
 ## VictorLinux preset (optional) — change on top of 0.2.0
 
 Environment: Linux container, JDK 21, Android SDK platform 35 / build-tools 35.0.0 (downloaded for this run), Python 3. **No device, no emulator, no live VictorLinux gateway.**

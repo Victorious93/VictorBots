@@ -19,6 +19,7 @@ import android.view.WindowInsets;
 import android.widget.*;
 import java.io.*;
 import java.util.*;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -419,6 +420,15 @@ public final class MainActivity extends Activity implements Host {
         f.append(" · tokens in/out ").append(meta.has("in_tokens") ? meta.optLong("in_tokens") : "unknown").append("/").append(meta.has("out_tokens") ? meta.optLong("out_tokens") : "unknown");
         if (meta.has("latency_ms")) f.append(" · ").append(meta.optLong("latency_ms")).append(" ms");
         if (meta.has("ttft_ms")) f.append(" · first token ").append(meta.optLong("ttft_ms")).append(" ms");
+        JSONArray used = meta.optJSONArray("tools");
+        if (used != null && used.length() > 0) {
+          f.append("\nTools used: ");
+          for (int k = 0; k < used.length(); k++) {
+            JSONObject u = used.optJSONObject(k);
+            if (u != null) f.append(k > 0 ? ", " : "").append(u.optString("tool")).append(u.optBoolean("ok") ? "" : " (" + u.optString("note") + ")");
+          }
+        }
+        if (!meta.optString("tool_notice").isEmpty()) f.append("\n").append(meta.optString("tool_notice"));
         if (plan.profile != null) f.append("\n").append(UsageStats.costLabel(plan.profile, meta.has("in_tokens") ? meta.optLong("in_tokens") : null, meta.has("out_tokens") ? meta.optLong("out_tokens") : null));
         break;
       }
@@ -740,6 +750,13 @@ public final class MainActivity extends Activity implements Host {
       if (!ex.used.isEmpty()) msg.append("Skill: ").append(ex.used.get(0).name).append(" v").append(ex.used.get(0).version).append(" (adds instructions only; grants nothing).\n");
       if (!ex.unmet.isEmpty()) msg.append("Skill needs ").append(ex.unmet).append(" which is not available now; it will run as plain text.\n");
       if (!pending.isEmpty()) msg.append(pending.size()).append(" attached file(s) sent as quoted data.\n");
+      List<ToolLoop.Binding> toolBindings = ToolLoop.bindings(app.db, botId);
+      if (!toolBindings.isEmpty()) {
+        StringBuilder tn = new StringBuilder();
+        for (ToolLoop.Binding b : toolBindings) tn.append(tn.length() > 0 ? ", " : "").append(b.connector);
+        if (plan.profile.toolsEnabled()) msg.append("\nThe bot may read through ").append(tn).append(" (read-only, up to ").append(ToolLoop.MAX_CALLS).append(" calls). What it reads is sent to ").append(Hosts.host(plan.profile.base)).append(".\n");
+        else msg.append("\nTool use is off for this provider profile, so the bot cannot call ").append(tn).append(". Turn on tool calls in the profile to allow it.\n");
+      }
       if (plan.profile.kind == Policy.Kind.CLOUD) msg.append("\nYour provider may charge for usage.");
       Runnable go = () -> {
         try {

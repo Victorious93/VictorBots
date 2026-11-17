@@ -54,6 +54,23 @@ public final class MigrationTest {
     fresh.tx(() -> { Migrations.upgrade(fresh, 0); return null; });
     T.check("fresh install creates all tables", fresh.count("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('profiles','memories','jobs','job_events','skills','routines','usage','chat_members','rounds','attachments','artifacts','routine_runs','bot_connectors')") == 13);
 
+    // v3: a pre-existing connector row keeps owner-driven behaviour (model use off, no workspace).
+    JdbcDb up = new JdbcDb("jdbc:sqlite::memory:");
+    up.exec("PRAGMA foreign_keys=OFF");
+    up.tx(() -> { Migrations.upgrade(up, 0); return null; });
+    T.eq("schema version", 3, Migrations.VERSION);
+    long ub = up.insert("INSERT INTO bots(name,description,instructions,avatar,uid) VALUES('B','d','i','x','u')");
+    up.exec("INSERT INTO bot_connectors(bot,connector,profile,tools) VALUES(" + ub + ",'repo',1,'[\"read_text_file\"]')");
+    T.eq("new connector rows default to auto=0", 0L, up.one("SELECT auto FROM bot_connectors").optLong("auto"));
+    T.eq("new connector rows default to no workspace", "", up.one("SELECT workspace FROM bot_connectors").optString("workspace"));
+    JdbcDb v2db = new JdbcDb("jdbc:sqlite::memory:");
+    v2db.exec("PRAGMA foreign_keys=OFF");
+    v2db.tx(() -> { Migrations.run(v2db, Migrations.v1()); Migrations.run(v2db, Migrations.v2()); return null; });
+    long vb = v2db.insert("INSERT INTO bots(name,description,instructions,avatar,uid) VALUES('B','d','i','x','u')");
+    v2db.exec("INSERT INTO bot_connectors(bot,connector,profile,tools) VALUES(" + vb + ",'repo',1,'[\"t\"]')");
+    v2db.tx(() -> { Migrations.upgrade(v2db, 2); return null; });
+    T.eq("a 0.2.0 connector row survives the upgrade, model use off", 0L, v2db.one("SELECT auto FROM bot_connectors WHERE connector='repo'").optLong("auto"));
+
     // FTS4 is usable (memory search depends on it).
     fresh.insert("INSERT INTO memory_fts(docid,body) VALUES(?,?)", 1L, "prefers kotlin coroutines for android work");
     T.eq("fts4 match", 1, fresh.rows("SELECT docid FROM memory_fts WHERE memory_fts MATCH ?", "kotlin*").size());

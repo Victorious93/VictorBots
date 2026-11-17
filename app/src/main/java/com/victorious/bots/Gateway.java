@@ -36,6 +36,8 @@ public final class Gateway {
     /** True only after the owner accepted a dialog naming this destination for this one request. */
     public boolean ownerConfirmed;
     public String modelOverride = "";
+    /** Function tools to offer the model. Honoured only for owner-initiated CHAT on a profile with tool calls switched on. */
+    public org.json.JSONArray tools;
   }
 
   public static final class Plan {
@@ -113,8 +115,10 @@ public final class Gateway {
     }
     Provider.Cfg cfg = p.cfg(key);
     cfg.model = plan.model;
+    if (r.tools != null && r.tools.length() > 0 && r.purpose == Policy.Purpose.CHAT && p.toolsEnabled()) cfg.tools = r.tools;
     int chars = 0;
-    for (Rules.Turn t : r.turns) chars += t.content.length();
+    for (Rules.Turn t : r.turns) chars += t.content.length() + (t.toolCalls == null ? 0 : t.toolCalls.length());
+    if (cfg.tools != null) chars += cfg.tools.toString().length();
     long t0 = System.currentTimeMillis();
     try {
       Provider.Reply rep = transport.chat(cfg, r.turns, r.stream && p.streaming(), r.sink, r.cancel);

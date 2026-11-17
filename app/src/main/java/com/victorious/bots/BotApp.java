@@ -119,11 +119,20 @@ public final class BotApp extends Application {
             notifyChanged();
           }
         };
-        Gateway.Result res = gateway.run(q);
-        JSONObject meta = new JSONObject().put("model_requested", res.plan.model).put("model_reported", res.reply.modelReported).put("latency_ms", res.reply.latencyMs).put("streamed", res.reply.streamed).put("profile", res.plan.profile.name).put("profile_id", res.plan.profile.id);
+        ToolLoop.Outcome tools = null;
+        Gateway.Result res;
+        // Model-driven tools: owner-initiated chat only, bots whose owner switched model use on.
+        List<ToolLoop.Binding> bindings = purpose == Policy.Purpose.CHAT ? ToolLoop.bindings(db, botId) : new ArrayList<ToolLoop.Binding>();
+        if (!bindings.isEmpty()) {
+          tools = new ToolLoop(gateway, new RunnerHost(botId)).run(q, bindings);
+          res = tools.last;
+        } else res = gateway.run(q);
+        JSONObject meta = new JSONObject().put("model_requested", res.plan.model).put("model_reported", res.reply.modelReported).put("latency_ms", tools != null ? tools.latencyMs : res.reply.latencyMs).put("streamed", res.reply.streamed).put("profile", res.plan.profile.name).put("profile_id", res.plan.profile.id);
         if (res.reply.firstTokenMs >= 0) meta.put("ttft_ms", res.reply.firstTokenMs);
-        if (res.reply.usage.in != null) meta.put("in_tokens", res.reply.usage.in);
-        if (res.reply.usage.out != null) meta.put("out_tokens", res.reply.usage.out);
+        Long tin = tools != null ? tools.inTokens : res.reply.usage.in, tout = tools != null ? tools.outTokens : res.reply.usage.out;
+        if (tin != null) meta.put("in_tokens", tin);
+        if (tout != null) meta.put("out_tokens", tout);
+        if (tools != null && (!tools.trace.isEmpty() || !tools.notice.isEmpty())) meta.put("tools", tools.traceJson()).put("tool_notice", tools.notice);
         store.finish(reply, res.reply.text, true, meta.toString());
       } catch (Gateway.Denied d) {
         store.finish(reply, d.getMessage(), false, "{}");
@@ -142,6 +151,31 @@ public final class BotApp extends Application {
       }
       notifyChanged();
     });
+  }
+
+  /** Executes a bot's tool calls on the PC runner that holds the connector. Only reads exist there. */
+  private final class RunnerHost implements ToolLoop.Host {
+    private final long bot;
+
+    RunnerHost(long bot) {
+      this.bot = bot;
+    }
+
+    private RunnerClient client(String connector) {
+      JSONObject r = db.one("SELECT profile FROM bot_connectors WHERE bot=? AND connector=?", bot, connector);
+      if (r == null) throw new IllegalStateException("Connector is not enabled for this bot.");
+      return RunnerClient.forProfile(profiles.get(r.optLong("profile")), secrets);
+    }
+
+    @Override
+    public JSONObject tools(String connector, String workspace) throws Exception {
+      return client(connector).connectorTools(connector, workspace);
+    }
+
+    @Override
+    public JSONObject call(String connector, String tool, JSONObject args, String workspace) throws Exception {
+      return client(connector).connectorCall(connector, tool, args, workspace);
+    }
   }
 
   public void stop(long reply) {
