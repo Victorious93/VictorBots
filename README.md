@@ -28,6 +28,7 @@ VictorBots owns bot profiles, conversations, team coordination, memory controls 
 | Area | Behaviour |
 |---|---|
 | **Look** | Fleet neon theme: dark surfaces only, background `#0B0F1A`, cyan `#00E5FF` for primary actions and links, magenta `#FF2BD6` for secondary accents, English-only UI. Colours live in `Ui.java` and `res/values/colors.xml`; `tests/jvm/ThemeTest.java` fails on light backgrounds, the old lime/olive colours or low text contrast. Checked on an Android 9 (API 28) emulator only, not a physical device. |
+| **Chat** | Replies render a small Markdown subset (bold, italic, inline code, code blocks, lists, headings, `http`/`https` links; no HTML). Links open only when tapped, after a dialog that shows the exact address. Each bubble has a **Copy** button (code blocks have **Copy code**); the long-press menu is unchanged. The last reply can be **Regenerated** (or **Retried** after a failure) and the last message **Edited and resent**: the replaced messages stay on the phone, hidden, and leave every later prompt. Both go through the same policy gateway and confirmations as a normal send. |
 | **Providers** | Several named profiles: cloud (OpenAI-compatible HTTPS) and PC (authenticated HTTPS). Each bot inherits the default or picks its own profile **and** model. Model discovery when the server supports it; manual id otherwise. Keys are encrypted with Android Keystore and cryptographically bound to *profile + endpoint origin*: editing an endpoint can never send the old key to a new host. |
 | **Policy** | Owner policy (`Cloud allowed` / `PC first, cloud only if I confirm` / `PC only`; `This device only` is shown but unavailable). Enforced in **one place** (`Gateway`) for every kind of request: chat, routing, memory suggestions, summaries, routines, team turns, diagnostics, fallback. A bot can only make policy *stricter*. Background work never falls back to cloud. |
 | **Diagnostics** | Five separate states: configuration saved · host reachable · credentials accepted · model available · **real reply received**. Owner-initiated live test names the destination and possible cost. Categorised errors (timeout, TLS, auth, model unavailable, malformed, unsupported). Requested vs server-reported model, tokens in/out (`unknown` when not reported), latency, first-token time. Capabilities shown as *configured / advertised / tested*. |
@@ -105,7 +106,6 @@ How-to: [MANUAL.md](MANUAL.md) (setup, security, backup and troubleshooting). Wh
 
 **Planned, not built.** The items below are not in the app yet (the parentheses note what already exists); the full proposal, with what is already built, the open questions and the suggested pull-request order, is in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
-- Better chat: markdown, per-message copy, retry/regenerate (streaming and Stop already exist).
 - Voice: dictation and read-aloud, off by default.
 - Scheduled background bots: templates and notifications on top of the existing routines.
 - DroidCommand phone actions, only through DroidCommand's own `COMPANION_EXEC` contract and its Allow screen, never automatic.

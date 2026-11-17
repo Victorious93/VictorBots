@@ -25,7 +25,9 @@ These come from `AGENTS.md`, `ARCHITECTURE.md` and `README.md`. Each planned ite
 
 ---
 
-## 1. Better chat: streaming, markdown, copy, retry — PLANNED
+## 1. Better chat: streaming, markdown, copy, retry — BUILT in the chat-polish PR (not released)
+
+Status: implemented in the "Chat polish" pull request; see `README.md` (Chat row) and `VERIFICATION.md`. The text below is the original plan and the starting-point findings.
 
 **Already in the app [Certain]:**
 

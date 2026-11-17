@@ -1,5 +1,14 @@
 # Victorious Framework — VictorBots verification
 
+## Chat polish (markdown, copy, retry, edit and resend) — 2026-11-17
+
+Change on top of `main` bbc46c9: `Markdown` (parser), `MarkdownView` (platform views), `ChatHistory` (retry/edit logic), copy and action buttons in chat bubbles. No schema migration: a replaced message keeps its row with status `replaced`, which every prompt, summary, memory and export query already excludes (they read `done`/`error` only).
+
+* `bash scripts/test-jvm.sh`: all 15 suites pass, including new `MarkdownTest` (111 checks: styles, escaping, unclosed constructs, code blocks, 38 hostile link targets, mismatched link text, bounded work on hostile input) and `ChatHistoryTest` (50 checks on real SQLite: which tail may change, nothing deleted, replaced rows leave prompts and backups, stale/foreign/pending replacements refused atomically). `ThemeTest` (151) passes. `tests/RulesTest.java` 19 checks. `pc-runner/test_runner.py`: OK (1 skipped). The 40,000-character context budget (`Rules.MAX_CONTEXT`) is unchanged.
+* `bash scripts/build-sdk.sh` and `bash scripts/build-test-sdk.sh` build; signer SHA-256 unchanged (`23cefc35…f5b82`).
+* **Emulator (API 28, isolated, fresh install):** against a host-side stub model server over TLS with a pinned certificate (a fixture that returns fixed Markdown text, not a real model): replies render bold, italic, inline code, a code block, lists and links; tapping a link shows its exact address first (and a warning when the visible text names a different address); **Regenerate** produced a new reply and the request carried only the system prompt and the one user message (no duplicated old turns); **Edit & resend** replaced the last message and its reply and the request carried only the edited text; the long-press menu still opens. Screenshots are of that stub text, not model output.
+* **Not run:** the instrumentation suite (`SmokeInstrumentation`, build only); a real provider or DroidCommand reply; the DroidCommand retry path on a device (same code path, not exercised); Copy and Copy code confirmed only by their toast, not by reading the clipboard; team chats (unchanged, no Markdown there); screen readers; a physical device.
+
 ## Fleet neon theme — 2026-11-16
 
 Palette: background `#0B0F1A`, primary accent cyan `#00E5FF`, secondary accent magenta `#FF2BD6`, dark surfaces `#121829` / `#1A2236` / `#2A1738`. Colours live only in `Ui.java` and `res/values/colors.xml`.

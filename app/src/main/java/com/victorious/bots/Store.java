@@ -105,8 +105,12 @@ public final class Store extends SQLiteOpenHelper {
   }
 
   public List<Rules.Turn> history(long chat) {
+    return history(chat, null);
+  }
+
+  public List<Rules.Turn> history(long chat, java.util.Collection<Long> exclude) {
     List<Rules.Turn> out = new ArrayList<>();
-    for (JSONObject r : db().rows("SELECT role,body FROM messages WHERE chat=? AND status='done' ORDER BY id", chat)) out.add(new Rules.Turn(r.optString("role"), r.optString("body")));
+    for (JSONObject r : db().rows("SELECT role,body FROM messages WHERE chat=? AND status='done'" + ChatHistory.notIn(exclude) + " ORDER BY id", chat)) out.add(new Rules.Turn(r.optString("role"), r.optString("body")));
     return out;
   }
 
