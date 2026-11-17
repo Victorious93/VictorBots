@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fleet neon theme. Keep in sync with Ui.java (ThemeTest enforces this). Dark surfaces only. -->
+    <color name="vb_bg">#0B0F1A</color>
+    <color name="vb_card">#121829</color>
+    <color name="vb_surface_hi">#1A2236</color>
+    <color name="vb_user_bubble">#2A1738</color>
+    <color name="vb_fg">#E8F1FF</color>
+    <color name="vb_muted">#9AA7C7</color>
+    <color name="vb_accent">#00E5FF</color>
+    <color name="vb_accent2">#FF2BD6</color>
+    <color name="vb_warn">#FFC46B</color>
+    <color name="vb_bad">#FF7A8A</color>
+</resources>

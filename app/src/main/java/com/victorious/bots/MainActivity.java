@@ -254,7 +254,7 @@ public final class MainActivity extends Activity implements Host {
         ImageView img = new ImageView(this);
         img.setImageBitmap(bmp);
         img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        img.setBackground(ui.bg(0xff34442a, 14));
+        img.setBackground(ui.bg(Ui.SURFACE_HI, 14, Ui.ACCENT));
         img.setClipToOutline(true);
         img.setContentDescription(b.optString("name") + " avatar");
         return img;
@@ -262,7 +262,7 @@ public final class MainActivity extends Activity implements Host {
     }
     TextView t = ui.text(b.optString("avatar", "✦"), 26, Ui.ACCENT);
     t.setGravity(Gravity.CENTER);
-    t.setBackground(ui.bg(0xff34442a, 14));
+    t.setBackground(ui.bg(Ui.SURFACE_HI, 14, Ui.ACCENT));
     return t;
   }
 
@@ -415,7 +415,7 @@ public final class MainActivity extends Activity implements Host {
     boolean user = m.optString("role").equals("user");
     String status = m.optString("status");
     LinearLayout bubble = ui.card(messages);
-    bubble.setBackground(ui.bg(user ? 0xff283320 : Ui.CARD, 18));
+    bubble.setBackground((user ? ui.bg(Ui.USER_BUBBLE, 18, Ui.ACCENT2) : ui.bg(Ui.CARD, 18)));
     bubble.addView(ui.text(user ? "YOU" : status.equals("error") ? "NOTICE" : status.equals("pending") ? "WAITING" : bot.optString("name").toUpperCase(Locale.ROOT), 10, status.equals("error") ? Ui.WARN : Ui.ACCENT));
     TextView content = ui.text(m.optString("body"), 16, Ui.FG);
     content.setTextIsSelectable(true);

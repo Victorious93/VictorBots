@@ -86,7 +86,7 @@ final class ProvidersScreen {
       c.addView(ui.text("Key: " + keyLine + (p.pin.isEmpty() ? "" : "\nPinned certificate: " + p.pin.substring(0, 12) + "…"), 12, keyOk || p.kind == Policy.Kind.CLOUD ? Ui.MUTED : Ui.WARN));
       if (p.isVictorLinux()) {
         Profile.Runner rn = p.runner();
-        c.addView(ui.text(rn == null ? "Runner: not configured. Jobs, routines and connectors stay unavailable for this profile." : "Runner: " + Hosts.host(rn.base) + ":" + VictorLinux.portOf(rn.base) + (rn.separate ? " (separate address: its own token and pin)" : " (same address as this PC: shares its token and pin)"), 12, rn == null ? Ui.NEON_MAGENTA : Ui.NEON_CYAN));
+        c.addView(ui.text(rn == null ? "Runner: not configured. Jobs, routines and connectors stay unavailable for this profile." : "Runner: " + Hosts.host(rn.base) + ":" + VictorLinux.portOf(rn.base) + (rn.separate ? " (separate address: its own token and pin)" : " (same address as this PC: shares its token and pin)"), 12, rn == null ? Ui.ACCENT2 : Ui.ACCENT));
       }
       String hint = p.kind == Policy.Kind.PC ? Hosts.pcHint(p.base) : "";
       if (!hint.isEmpty()) c.addView(ui.text("⚠ " + hint, 12, Ui.WARN));
@@ -221,8 +221,8 @@ final class ProvidersScreen {
   private void editVictorLinux(Profile existing) {
     LinearLayout f = ui.column();
     f.setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(12));
-    f.setBackgroundColor(Ui.NEON_BG);
-    f.addView(ui.text("VICTORLINUX PC · OPTIONAL PRESET", 11, Ui.NEON_CYAN));
+    f.setBackgroundColor(Ui.BG);
+    f.addView(ui.text("VICTORLINUX PC · OPTIONAL PRESET", 11, Ui.ACCENT));
     f.addView(ui.text("HTTPS only. The access token and the certificate SHA-256 fingerprint are both required, redirects are refused, and only the exact certificate you pin is trusted for this profile.", 12, Ui.MUTED));
     JSONObject old = existing == null ? new JSONObject() : existing.caps;
     EditText name = ui.field(f, "Profile name", existing == null ? "VictorLinux" : existing.name, false);
@@ -260,7 +260,7 @@ final class ProvidersScreen {
         h.act().runOnUiThread(() -> {
           found[0] = c;
           foundFor[0] = cfg.base + "|" + cfg.pin;
-          note.setTextColor(c.ok ? Ui.NEON_CYAN : Ui.WARN);
+          note.setTextColor(c.ok ? Ui.ACCENT : Ui.WARN);
           note.setText(c.describe());
           if (c.ok && Boolean.TRUE.equals(c.toolCalls)) tools.setChecked(true);
         });
@@ -270,7 +270,7 @@ final class ProvidersScreen {
     EditText ctx = ui.field(f, "Context window in tokens (blank = assume 4096)", old.optInt("context_tokens", 0) == 0 ? "" : "" + old.optInt("context_tokens"), false);
     ctx.setInputType(InputType.TYPE_CLASS_NUMBER);
 
-    f.addView(ui.text("RUNNER (OPTIONAL)", 11, Ui.NEON_CYAN));
+    f.addView(ui.text("RUNNER (OPTIONAL)", 11, Ui.ACCENT));
     f.addView(ui.text("Only if you run the VictorBots PC runner. Leave empty and jobs, routines and connectors show “" + VictorLinux.NO_RUNNER + "”. A runner on a different address never receives the PC's token: it needs its own.", 12, Ui.MUTED));
     EditText runnerUrl = ui.field(f, "Runner URL (e.g. https://host:8443/runner/v1)", old.optString("runner_url"), false);
     EditText runnerToken = ui.field(f, "Runner access token (only for a different address; blank keeps the stored one)", "", false);
@@ -278,7 +278,7 @@ final class ProvidersScreen {
     runnerToken.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
     EditText runnerPin = ui.field(f, "Runner certificate SHA-256 (only for a different address)", old.optString("runner_pin"), true);
 
-    TextView err = ui.text("", 13, Ui.NEON_MAGENTA);
+    TextView err = ui.text("", 13, Ui.ACCENT2);
     err.setVisibility(View.GONE);
     f.addView(err);
     ui.form(existing == null ? "Add VictorLinux PC" : "Edit " + existing.name, f, "Save", () -> {

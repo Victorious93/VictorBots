@@ -1,5 +1,13 @@
 # Victorious Framework — VictorBots verification
 
+## Fleet neon theme — 2026-11-16
+
+Palette: background `#0B0F1A`, primary accent cyan `#00E5FF`, secondary accent magenta `#FF2BD6`, dark surfaces `#121829` / `#1A2236` / `#2A1738`. Colours live only in `Ui.java` and `res/values/colors.xml`.
+
+* `bash scripts/test-jvm.sh`: all 12 suites passed, including the new `ThemeTest` (137 checks: no old lime/olive literals, no light backgrounds, palette present, Ui.java == colors.xml, status/navigation bars dark, WCAG AA contrast for every text role on every surface, guard self-tests).
+* `bash scripts/build-sdk.sh` (SDK platform 35, build-tools 35.0.0, JDK 21): built and signed; signer SHA-256 unchanged (`23cefc35...f5b82`).
+* Emulator (API 28 x86_64, KVM, isolated, fresh install): home, chat, Bots, Jobs and More tabs, a dialog and an alert dialog inspected by screenshot. Not exercised: user message bubble (the default bot needs DroidCommand or a provider profile to send), Teams screen content, every other dialog/spinner popup, the instrumentation suite. The on-screen keyboard is the system IME and is not themed by the app. No physical device.
+
 ## 0.2.0 development build — 2026-11-14
 
 **Build environment:** Linux container, JDK 21, Android SDK platform 35 / build-tools 35.0.0 (`scripts/build-sdk.sh`), Python 3.13, Android emulator API 28 x86_64 **software-emulated (no KVM)**. No physical phone. No real cloud-provider credentials. No real Ollama/llama.cpp server. No DroidCommand APK installed.

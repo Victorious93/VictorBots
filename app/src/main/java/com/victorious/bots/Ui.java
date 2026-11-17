@@ -12,9 +12,9 @@ import java.util.concurrent.Callable;
 
 /** Small programmatic view toolkit shared by all screens (the app deliberately uses no UI framework). */
 public final class Ui {
-  public static final int BG = 0xff10120f, CARD = 0xff1c2019, FG = 0xfff0f3e9, MUTED = 0xffa5ae9e, ACCENT = 0xffb5f36c, WARN = 0xffffbe8a, BAD = 0xffff8a8a;
-  /** Dark neon accents used by the optional VictorLinux preset. Backgrounds are always dark. */
-  public static final int NEON_BG = 0xff0b0f1a, NEON_CYAN = 0xff00e5ff, NEON_MAGENTA = 0xffff2bd6;
+  /** Fleet neon theme; mirrors res/values/colors.xml (tests/jvm/ThemeTest.java keeps both honest). Dark surfaces only. */
+  public static final int BG = 0xff0b0f1a, CARD = 0xff121829, SURFACE_HI = 0xff1a2236, USER_BUBBLE = 0xff2a1738;
+  public static final int FG = 0xffe8f1ff, MUTED = 0xff9aa7c7, ACCENT = 0xff00e5ff, ACCENT2 = 0xffff2bd6, WARN = 0xffffc46b, BAD = 0xffff7a8a;
   public final Context c;
 
   public Ui(Context c) {
@@ -29,6 +29,12 @@ public final class Ui {
     GradientDrawable d = new GradientDrawable();
     d.setColor(color);
     d.setCornerRadius(dp(radius));
+    return d;
+  }
+
+  public GradientDrawable bg(int color, int radius, int stroke) {
+    GradientDrawable d = bg(color, radius);
+    d.setStroke(dp(1), stroke);
     return d;
   }
 
@@ -69,7 +75,7 @@ public final class Ui {
     b.setAllCaps(false);
     b.setTextSize(14);
     b.setTextColor(primary ? BG : FG);
-    b.setBackground(bg(primary ? ACCENT : 0xff2b3226, 16));
+    b.setBackground(primary ? bg(ACCENT, 16) : bg(SURFACE_HI, 16, ACCENT2));
     b.setMinHeight(dp(46));
     b.setPadding(dp(14), dp(8), dp(14), dp(8));
     b.setOnClickListener(v -> run.run());
@@ -79,12 +85,11 @@ public final class Ui {
     return b;
   }
 
+  /** Cyan-outlined action on the dark background; used by the optional VictorLinux preset. */
   public Button neonButton(String label, Runnable run) {
     Button b = button(label, run, false);
-    GradientDrawable d = bg(NEON_BG, 16);
-    d.setStroke(dp(2), NEON_CYAN);
-    b.setBackground(d);
-    b.setTextColor(NEON_CYAN);
+    b.setBackground(bg(BG, 16, ACCENT));
+    b.setTextColor(ACCENT);
     return b;
   }
 
@@ -105,7 +110,7 @@ public final class Ui {
     e.setTextSize(16);
     e.setTextColor(FG);
     e.setHintTextColor(MUTED);
-    e.setBackground(bg(0xff242a20, 12));
+    e.setBackground(bg(SURFACE_HI, 12));
     e.setPadding(dp(12), dp(10), dp(12), dp(10));
     e.setSingleLine(!multi);
     e.setInputType(InputType.TYPE_CLASS_TEXT | (multi ? InputType.TYPE_TEXT_FLAG_MULTI_LINE : 0));
