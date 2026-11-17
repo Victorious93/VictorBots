@@ -90,7 +90,7 @@ public final class ProviderTest {
     T.eq("tools offered in the request", "repo__read", treq.getJSONArray("tools").getJSONObject(0).getJSONObject("function").getString("name"));
     List<Rules.Turn> withTool = new ArrayList<>(TURNS);
     Rules.Turn asked = new Rules.Turn("assistant", "");
-    asked.toolCalls = new JSONArray().put(tr.toolCalls.get(0));
+    asked.toolCalls = new JSONArray().put(tr.toolCalls.get(0)).toString();
     withTool.add(asked);
     Rules.Turn answer = new Rules.Turn("tool", "file text");
     answer.toolCallId = "call_1";

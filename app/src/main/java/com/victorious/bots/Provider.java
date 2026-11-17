@@ -186,7 +186,7 @@ public final class Provider {
         continue;
       }
       if (t.toolCalls != null) {
-        m.put("content", t.content.isEmpty() ? JSONObject.NULL : t.content).put("tool_calls", t.toolCalls);
+        m.put("content", t.content.isEmpty() ? JSONObject.NULL : t.content).put("tool_calls", new JSONArray(t.toolCalls));
         arr.put(m);
         continue;
       }

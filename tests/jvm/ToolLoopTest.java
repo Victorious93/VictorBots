@@ -70,7 +70,7 @@ public final class ToolLoopTest {
     T.eq("result returned with the call id", "c1", tool.toolCallId);
     T.eq("result role", "tool", tool.role);
     T.check("tool output is wrapped as untrusted data", tool.content.startsWith("<<<UNTRUSTED DATA") && tool.content.contains("FILE BODY"));
-    T.eq("assistant turn echoes the request", "c1", second.get(second.size() - 2).toolCalls.getJSONObject(0).getString("id"));
+    T.eq("assistant turn echoes the request", "c1", new JSONArray(second.get(second.size() - 2).toolCalls).getJSONObject(0).getString("id"));
     T.eq("trace records the call, never the output", false, o.traceJson().toString().contains("FILE BODY"));
     T.eq("trace ok", true, o.trace.get(0).ok);
     T.eq("tokens summed across rounds", (Long) 20L, o.inTokens);

@@ -169,7 +169,7 @@ public final class ToolLoop {
       JSONArray echo = new JSONArray();
       for (JSONObject c : wanted) echo.put(c);
       Rules.Turn asked = new Rules.Turn("assistant", res.reply.text);
-      asked.toolCalls = echo;
+      asked.toolCalls = echo.toString();
       turns.add(asked);
       for (int i = 0; i < wanted.size(); i++) {
         if (base.cancel != null && base.cancel.isCancelled()) throw new ProviderError(ProviderError.Category.CANCELLED, 0, "Stopped.", true);

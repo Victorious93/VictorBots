@@ -117,7 +117,7 @@ public final class Gateway {
     cfg.model = plan.model;
     if (r.tools != null && r.tools.length() > 0 && r.purpose == Policy.Purpose.CHAT && p.toolsEnabled()) cfg.tools = r.tools;
     int chars = 0;
-    for (Rules.Turn t : r.turns) chars += t.content.length() + (t.toolCalls == null ? 0 : t.toolCalls.toString().length());
+    for (Rules.Turn t : r.turns) chars += t.content.length() + (t.toolCalls == null ? 0 : t.toolCalls.length());
     if (cfg.tools != null) chars += cfg.tools.toString().length();
     long t0 = System.currentTimeMillis();
     try {
