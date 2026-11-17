@@ -93,6 +93,27 @@ public final class Ui {
     return b;
   }
 
+  /** A compact action button (copy, retry, edit) that sits in a bubble's action row. */
+  public Button chip(String label, String description, Runnable run) {
+    Button b = new Button(c);
+    b.setText(label);
+    b.setAllCaps(false);
+    b.setTextSize(12);
+    b.setTextColor(FG);
+    b.setBackground(bg(SURFACE_HI, 12, ACCENT2));
+    b.setMinHeight(0);
+    b.setMinimumHeight(dp(36));
+    b.setMinWidth(0);
+    b.setMinimumWidth(dp(56));
+    b.setPadding(dp(12), dp(4), dp(12), dp(4));
+    b.setContentDescription(description);
+    b.setOnClickListener(v -> run.run());
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
+    p.setMargins(0, dp(4), dp(8), dp(2));
+    b.setLayoutParams(p);
+    return b;
+  }
+
   public LinearLayout card(LinearLayout parent) {
     LinearLayout l = column();
     l.setPadding(dp(18), dp(16), dp(18), dp(16));

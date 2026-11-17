@@ -30,6 +30,11 @@ public final class PromptBuilder {
   }
 
   public Built build(JSONObject bot, JSONObject chat, Profile profile, String input, List<Attachment> files, String extraSystem) {
+    return build(bot, chat, profile, input, files, extraSystem, null);
+  }
+
+  /** @param exclude message ids that are about to be replaced (regenerate / edit) and must not appear as history */
+  public Built build(JSONObject bot, JSONObject chat, Profile profile, String input, List<Attachment> files, String extraSystem, java.util.Collection<Long> exclude) {
     long botId = bot.optLong("id");
     double cpt = profile == null ? 3.0 : profile.charsPerToken();
     String basis = profile == null ? "assumed" : profile.budgetBasis() + "; " + profile.tokenBasis();
@@ -58,7 +63,7 @@ public final class PromptBuilder {
     List<Rules.Turn> history = new ArrayList<>();
     if (chat != null) {
       boolean team = chat.optString("kind").equals("team");
-      for (JSONObject m : db.rows("SELECT role,body,author FROM messages WHERE chat=? AND status='done' ORDER BY id", chat.optLong("id"))) {
+      for (JSONObject m : db.rows("SELECT role,body,author FROM messages WHERE chat=? AND status='done'" + ChatHistory.notIn(exclude) + " ORDER BY id", chat.optLong("id"))) {
         long author = m.optLong("author");
         String body = m.optString("body");
         if (team && author != 0 && author != botId) {

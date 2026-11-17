@@ -2,6 +2,7 @@ package com.victorious.bots;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
@@ -31,6 +32,9 @@ public final class MainActivity extends Activity implements Host {
   private long botId = 0, chatId = 0, imageBot = 0, subId = 0;
   private String tab = "Bots", sub = "", draft = "";
   private boolean foreground = false;
+  /** Id of the user message being edited (0 = none). Sending replaces it and the replies after it. */
+  private long editUserId = 0;
+  private MarkdownView markdown;
   private final List<PromptBuilder.Attachment> pending = new ArrayList<>();
   private final List<Attachments.Result> pendingMeta = new ArrayList<>();
   private ProvidersScreen providers;
@@ -49,7 +53,9 @@ public final class MainActivity extends Activity implements Host {
     teamScreen = new TeamScreen(this);
     jobsScreen = new JobsScreen(this);
     more = new MoreScreens(this);
+    markdown = new MarkdownView(ui);
     if (state != null) {
+      editUserId = state.getLong("editUser");
       botId = state.getLong("bot");
       chatId = state.getLong("chat");
       tab = state.getString("tab", "Bots");
@@ -92,6 +98,7 @@ public final class MainActivity extends Activity implements Host {
     b.putLong("subId", subId);
     b.putString("draft", draft);
     b.putLong("imageBot", imageBot);
+    b.putLong("editUser", editUserId);
     super.onSaveInstanceState(b);
   }
 
@@ -99,6 +106,7 @@ public final class MainActivity extends Activity implements Host {
   public void onBackPressed() {
     if (botId != 0 || chatId != 0) {
       botId = chatId = 0;
+      editUserId = 0;
       draft = "";
       pending.clear();
       pendingMeta.clear();
@@ -332,7 +340,7 @@ public final class MainActivity extends Activity implements Host {
     }
     Gateway.Plan plan = app.gateway.plan(botId, 0, Policy.Purpose.CHAT, false, "");
     LinearLayout head = ui.row();
-    head.addView(ui.button("‹", () -> { botId = chatId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); }, false), new LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)));
+    head.addView(ui.button("‹", () -> { botId = chatId = 0; editUserId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); }, false), new LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)));
     LinearLayout title = ui.column();
     title.setPadding(ui.dp(12), 0, ui.dp(8), 0);
     title.addView(ui.heading(bot.optString("name"), 18));
@@ -342,7 +350,10 @@ public final class MainActivity extends Activity implements Host {
     page.addView(head);
     ui.gap(page, 8);
     LinearLayout messages = ui.column();
-    List<JSONObject> items = app.db.rows("SELECT * FROM messages WHERE chat=? ORDER BY id", chatId);
+    List<JSONObject> items = app.db.rows("SELECT * FROM messages WHERE chat=? AND status!=? ORDER BY id", chatId, ChatHistory.REPLACED);
+    List<ChatHistory.Msg> tail = ChatHistory.from(items);
+    long retryId = ChatHistory.retryableReplyId(tail), editId = ChatHistory.editableUserId(tail);
+    if (editUserId != 0 && editUserId != editId) editUserId = 0;
     if (items.isEmpty()) {
       LinearLayout intro = ui.card(messages);
       intro.addView(avatar(bot), new LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)));
@@ -351,7 +362,7 @@ public final class MainActivity extends Activity implements Host {
       intro.addView(ui.text(bot.optString("description"), 15, Ui.MUTED));
       intro.addView(ui.text("Sent: this bot's instructions, memory you approved, and recent turns that fit the model's token budget. Older turns are omitted, and you are told how many.", 13, Ui.MUTED));
     }
-    for (JSONObject m : items) messageView(messages, m, bot);
+    for (JSONObject m : items) messageView(messages, m, bot, retryId, editId);
     ScrollView history = ui.scroll(messages);
     page.addView(history, new LinearLayout.LayoutParams(-1, 0, 1));
     history.post(() -> history.fullScroll(View.FOCUS_DOWN));
@@ -371,6 +382,10 @@ public final class MainActivity extends Activity implements Host {
       StringBuilder sb = new StringBuilder("Attached: ");
       for (int i = 0; i < pendingMeta.size(); i++) sb.append(i == 0 ? "" : ", ").append(pendingMeta.get(i).name).append(pendingMeta.get(i).truncated ? " (shortened)" : "");
       page.addView(ui.text(sb.toString(), 12, Ui.ACCENT));
+    }
+    if (editUserId != 0) {
+      page.addView(ui.text("Editing your last message. Sending replaces it and the reply after it. The old version is kept hidden on this phone, not sent anywhere.", 12, Ui.ACCENT));
+      page.addView(ui.chip("Cancel edit", "Cancel editing", () -> { editUserId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); }));
     }
     composer = new EditText(this);
     composer.setText(draft);
@@ -411,21 +426,50 @@ public final class MainActivity extends Activity implements Host {
     return f.toString();
   }
 
-  private void messageView(LinearLayout messages, JSONObject m, JSONObject bot) {
+  private void messageView(LinearLayout messages, JSONObject m, JSONObject bot, long retryId, long editId) {
     boolean user = m.optString("role").equals("user");
     String status = m.optString("status");
+    String raw = m.optString("body");
+    long id = m.optLong("id");
     LinearLayout bubble = ui.card(messages);
     bubble.setBackground((user ? ui.bg(Ui.USER_BUBBLE, 18, Ui.ACCENT2) : ui.bg(Ui.CARD, 18)));
     bubble.addView(ui.text(user ? "YOU" : status.equals("error") ? "NOTICE" : status.equals("pending") ? "WAITING" : bot.optString("name").toUpperCase(Locale.ROOT), 10, status.equals("error") ? Ui.WARN : Ui.ACCENT));
-    TextView content = ui.text(m.optString("body"), 16, Ui.FG);
-    content.setTextIsSelectable(true);
-    bubble.addView(content);
-    for (JSONObject a : app.db.rows("SELECT name,kind,size,truncated FROM attachments WHERE message=?", m.optLong("id")))
+    boolean rendered = status.equals("done") && !user && m.optString("kind", "text").equals("text");
+    if (rendered) {
+      markdown.render(bubble, raw, new MarkdownView.Actions() {
+        @Override
+        public void copy(String text, String what) {
+          copyText(text, what);
+        }
+
+        @Override
+        public void openLink(String url, boolean mismatch) {
+          confirmOpenLink(url, mismatch);
+        }
+
+        @Override
+        public void longPress() {
+          messageMenu(m);
+        }
+      });
+    } else {
+      TextView content = ui.text(raw, 16, Ui.FG);
+      content.setTextIsSelectable(true);
+      bubble.addView(content);
+    }
+    for (JSONObject a : app.db.rows("SELECT name,kind,size,truncated FROM attachments WHERE message=?", id))
       bubble.addView(ui.text("📎 " + a.optString("name") + " (" + a.optString("kind") + ", " + a.optLong("size") + " bytes" + (a.optInt("truncated") == 1 ? ", shortened" : "") + ")", 11, Ui.MUTED));
     if (status.equals("done") && !user) {
-      content.setOnLongClickListener(v -> { messageMenu(m); return true; });
-      for (JobProposals.Proposal p : JobProposals.parse(m.optString("body")))
-        bubble.addView(ui.button("Review proposed job: " + Ui.clip(p.title, 40), () -> jobsScreen.reviewProposal(p, botId, chatId, m.optLong("id")), false));
+      for (JobProposals.Proposal p : JobProposals.parse(raw))
+        bubble.addView(ui.button("Review proposed job: " + Ui.clip(p.title, 40), () -> jobsScreen.reviewProposal(p, botId, chatId, id), false));
+    }
+    boolean canCopy = status.equals("done") || status.equals("error");
+    if (canCopy) {
+      LinearLayout row = ui.row();
+      row.addView(ui.chip("Copy", "Copy this message", () -> copyText(raw, "Message")));
+      if (id == retryId) row.addView(ui.chip(status.equals("error") ? "Retry" : "Regenerate", status.equals("error") ? "Retry the last message" : "Regenerate this reply", this::retryLast));
+      if (id == editId && editUserId != id) row.addView(ui.chip("Edit & resend", "Edit and resend your last message", () -> startEdit(m)));
+      bubble.addView(row);
     }
     try {
       JSONObject meta = new JSONObject(m.optString("meta", "{}"));
@@ -439,8 +483,71 @@ public final class MainActivity extends Activity implements Host {
     }
   }
 
+  /** Regenerate / retry: re-ask the last user message and replace the last reply; nothing changes until the send goes ahead. */
+  private void retryLast() {
+    ChatHistory.Replacement r = ChatHistory.forRetry(ChatHistory.from(app.db.rows("SELECT * FROM messages WHERE chat=? ORDER BY id", chatId)));
+    if (r == null) {
+      ui.toast("Nothing to retry here any more.");
+      render();
+      return;
+    }
+    if (!loadStoredAttachments(r.userId)) return;
+    doSend(r.text, 0, false, true, r);
+  }
+
+  private void startEdit(JSONObject userMsg) {
+    if (!loadStoredAttachments(userMsg.optLong("id"))) return;
+    editUserId = userMsg.optLong("id");
+    draft = userMsg.optString("body");
+    render();
+  }
+
+  /** Text attachments of the original message are re-attached; anything else must be attached again by the owner. */
+  private boolean loadStoredAttachments(long userMsg) {
+    pending.clear();
+    pendingMeta.clear();
+    for (JSONObject a : app.db.rows("SELECT name,mime,size,sha256,kind,body,truncated FROM attachments WHERE message=?", userMsg)) {
+      if (!a.optString("kind").equals("text")) {
+        ui.info("Attach it again", "This message had " + a.optString("name") + ", which is not stored for reuse (only text files are). Attach it again with the paperclip, then send.");
+        return false;
+      }
+      PromptBuilder.Attachment pa = new PromptBuilder.Attachment();
+      pa.name = a.optString("name");
+      pa.text = a.optString("body");
+      pa.truncated = a.optInt("truncated") == 1;
+      Attachments.Result r = new Attachments.Result();
+      r.kind = "text";
+      r.name = pa.name;
+      r.mime = a.optString("mime");
+      r.size = a.optLong("size");
+      r.sha256 = a.optString("sha256");
+      r.text = pa.text;
+      r.truncated = pa.truncated;
+      pending.add(pa);
+      pendingMeta.add(r);
+    }
+    return true;
+  }
+
+  private void confirmOpenLink(String url, boolean mismatch) {
+    String safe = Markdown.safeUrl(url);
+    if (safe == null) {
+      ui.info("Link not opened", "This address is not a plain http or https link.");
+      return;
+    }
+    String msg = safe + "\n\nIt opens in your browser; VictorBots does not load it.";
+    if (mismatch) msg += "\n\nWarning: the text of this link shows a different address than the one it opens.";
+    ui.confirm("Open this link?", msg, "Open", () -> {
+      try {
+        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(safe)).addCategory(Intent.CATEGORY_BROWSABLE));
+      } catch (ActivityNotFoundException e) {
+        ui.toast("No browser found to open this link.");
+      }
+    });
+  }
+
   private void retryOnFallback(JSONObject failed, Profile fb) {
-    JSONObject prev = app.db.one("SELECT body FROM messages WHERE chat=? AND role='user' ORDER BY id DESC LIMIT 1", chatId);
+    JSONObject prev = app.db.one("SELECT body FROM messages WHERE chat=? AND role='user' AND status!='replaced' ORDER BY id DESC LIMIT 1", chatId);
     if (prev == null) return;
     ui.confirm("Send this to " + Hosts.host(fb.base) + "?", "Your PC did not answer. This one request would go to the cloud provider " + fb.name + " (" + fb.model + "). Your provider may charge for it. Nothing else changes: the next message goes back to your PC.", "Send to cloud", () -> {
       draft = prev.optString("body");
@@ -451,7 +558,7 @@ public final class MainActivity extends Activity implements Host {
   private void botMenu() {
     ui.choose("Bot & conversations", new String[] {"New conversation", "Conversation history", "Edit bot (provider, model, policy)", "Memory for this bot", "Suggest memories from this chat", "Summarise older turns", "Change avatar image", "Delete this conversation", "Delete bot"}, which -> {
       switch (which) {
-        case 0: chatId = app.store.newChat(botId); draft = ""; pending.clear(); pendingMeta.clear(); render(); break;
+        case 0: chatId = app.store.newChat(botId); editUserId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); break;
         case 1: chooseChat(); break;
         case 2: editBot(botId); break;
         case 3: long b = botId; botId = chatId = 0; go("More", "memory", b); break;
@@ -508,7 +615,7 @@ public final class MainActivity extends Activity implements Host {
     List<JSONObject> chats = app.db.rows("SELECT * FROM chats WHERE bot=? ORDER BY id DESC", botId);
     String[] labels = new String[chats.size()];
     for (int i = 0; i < labels.length; i++) labels[i] = chats.get(i).optString("title");
-    ui.choose("Conversations", labels, w -> { chatId = chats.get(w).optLong("id"); draft = ""; render(); });
+    ui.choose("Conversations", labels, w -> { chatId = chats.get(w).optLong("id"); editUserId = 0; draft = ""; render(); });
   }
 
   private void confirmDelete(boolean whole) {
@@ -583,11 +690,27 @@ public final class MainActivity extends Activity implements Host {
   private void send() {
     String input = composer.getText().toString().trim();
     if (input.isEmpty()) return;
+    if (editUserId != 0) {
+      ChatHistory.Replacement r = ChatHistory.forEdit(ChatHistory.from(app.db.rows("SELECT * FROM messages WHERE chat=? ORDER BY id", chatId)), editUserId, input);
+      if (r == null) {
+        editUserId = 0;
+        ui.info("Cannot edit any more", "The conversation changed, so that message can no longer be replaced. Nothing was sent. Your text is still in the box; send it as a new message if you want.");
+        draft = input;
+        render();
+        return;
+      }
+      doSend(input, 0, false, true, r);
+      return;
+    }
     doSend(input, 0, false, true);
   }
 
-  /** @param confirmedCloud true only when this exact request was confirmed in a dialog naming the destination */
   private void doSend(String input, long profileOverride, boolean confirmedCloud, boolean askConfirm) {
+    doSend(input, profileOverride, confirmedCloud, askConfirm, null);
+  }
+
+  /** @param confirmedCloud true only when this exact request was confirmed in a dialog naming the destination */
+  private void doSend(String input, long profileOverride, boolean confirmedCloud, boolean askConfirm, ChatHistory.Replacement replace) {
     try {
       JSONObject bot = app.store.bot(botId);
       Skills.Expansion ex = Skills.expand(app.db, input, availableRequirements());
@@ -596,18 +719,18 @@ public final class MainActivity extends Activity implements Host {
       if (plan.profile == null) throw new IllegalStateException("No provider profile exists. Open More → Providers.");
       if (!plan.decision.allowed) {
         if (app.profiles.globalMode() == Policy.Mode.PC_PREFERRED && plan.profile.kind != Policy.Kind.PC && !confirmedCloud) {
-          ui.confirm("Use " + (plan.profile.kind == Policy.Kind.CLOUD ? "a cloud provider" : "DroidCommand") + " for this one message?", "Your policy keeps work on your PC first. This message would go to " + Diagnostics.destination(plan.profile) + ". Only this request.", "Send this one", () -> doSend(input, profileOverride, true, false));
+          ui.confirm("Use " + (plan.profile.kind == Policy.Kind.CLOUD ? "a cloud provider" : "DroidCommand") + " for this one message?", "Your policy keeps work on your PC first. This message would go to " + Diagnostics.destination(plan.profile) + ". Only this request.", "Send this one", () -> doSend(input, profileOverride, true, false, replace));
           return;
         }
         throw new IllegalStateException(plan.decision.reason);
       }
       JSONObject chatRow = app.db.one("SELECT * FROM chats WHERE id=?", chatId);
       if (plan.profile.kind == Policy.Kind.DROIDCOMMAND) {
-        sendViaDroidCommand(bot, chatRow, text, input, plan);
+        sendViaDroidCommand(bot, chatRow, text, input, plan, replace);
         return;
       }
       if (plan.model.isEmpty()) throw new IllegalStateException("No model is set. Open the bot menu → Edit bot, or More → Providers.");
-      PromptBuilder.Built built = new PromptBuilder(app.db, app.memory).build(bot, chatRow, plan.profile, text, pending, "");
+      PromptBuilder.Built built = new PromptBuilder(app.db, app.memory).build(bot, chatRow, plan.profile, text, pending, "", replace == null ? null : replace.ids);
       if (!pendingImages(built).isEmpty() && !plan.profile.images()) throw new IllegalStateException("This provider profile is not set up for images. Turn on image input in the profile only if the model supports it.");
       StringBuilder msg = new StringBuilder();
       msg.append("To: ").append(Diagnostics.destination(plan.profile)).append("\nModel: ").append(plan.model).append("\nPolicy: ").append(plan.mode.label).append("\n\n");
@@ -621,6 +744,10 @@ public final class MainActivity extends Activity implements Host {
       Runnable go = () -> {
         try {
           if (app.db.count("SELECT COUNT(*) n FROM messages WHERE chat=? AND status='pending'", chatId) > 0) return;
+          if (replace != null) {
+            ChatHistory.apply(app.db, chatId, replace);
+            editUserId = 0;
+          }
           long userMsg = app.store.message(chatId, "user", input, "done");
           for (int i = 0; i < pending.size(); i++) saveAttachment(userMsg, pendingMeta.get(i));
           app.db.update("UPDATE chats SET title=? WHERE id=? AND title='New conversation'", Ui.clip(input, 65), chatId);
@@ -662,14 +789,18 @@ public final class MainActivity extends Activity implements Host {
   }
 
   /** DroidCommand answers only after its own consent screen; it is never used for unattended work. */
-  private void sendViaDroidCommand(JSONObject bot, JSONObject chatRow, String text, String input, Gateway.Plan plan) throws Exception {
+  private void sendViaDroidCommand(JSONObject bot, JSONObject chatRow, String text, String input, Gateway.Plan plan, ChatHistory.Replacement replace) throws Exception {
     if (prefs.getLong("dca_reply", 0) != 0) throw new IllegalStateException("A DroidCommand request is already pending. Finish it or stop waiting in its conversation first.");
     DcaBridge.verify(this, prefs.getString("pin", DcaBridge.DEBUG_PIN));
-    List<Rules.Turn> turns = Rules.context(app.store.history(chatId), bot.optString("instructions") + Memory.block(app.memory.retrieve(botId, bot.optString("project"), text, app.memory.budgetTokens(), 3.0)), text);
+    List<Rules.Turn> turns = Rules.context(app.store.history(chatId, replace == null ? null : replace.ids), bot.optString("instructions") + Memory.block(app.memory.retrieve(botId, bot.optString("project"), text, app.memory.budgetTokens(), 3.0)), text);
     Intent request = DcaBridge.request(turns);
     ui.confirm("Send to DroidCommand AI?", "This sends the bot instructions, approved memory and recent chat (character-budgeted, up to 60,000 characters; DroidCommand reports no token counts) to DroidCommand. DroidCommand then asks you to Allow, and decides which model and where text goes. VictorBots cannot verify that destination.\n\nPolicy: " + plan.mode.label, "Send", () -> {
       try {
         if (app.store.pending(chatId)) return;
+        if (replace != null) {
+          ChatHistory.apply(app.db, chatId, replace);
+          editUserId = 0;
+        }
         app.store.message(chatId, "user", input, "done");
         app.db.update("UPDATE chats SET title=? WHERE id=? AND title='New conversation'", Ui.clip(input, 65), chatId);
         long reply = app.store.message(chatId, "system", "Waiting for DroidCommand consent…", "pending");
@@ -690,8 +821,12 @@ public final class MainActivity extends Activity implements Host {
   }
 
   private void copy(String s) {
+    copyText(s, "Text");
+  }
+
+  private void copyText(String s, String what) {
     ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("VictorBots", s));
-    ui.toast("Copied to clipboard");
+    ui.toast(what + " copied to clipboard");
   }
 
   // ---------------------------------------------------------------- results
