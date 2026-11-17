@@ -82,7 +82,7 @@ adb install -r app/build/sdk/VictorBots-0.2.0-debug.apk && adb install -r build/
 adb shell am instrument -w com.victorious.bots.test/com.victorious.bots.test.SmokeInstrumentation
 ```
 
-`./gradlew :app:assembleDebug` also exists but was **not** verified (AGP could not be resolved in the build environments used); the SDK script is the supported path.
+`./gradlew :app:assembleDebug` also exists. It could not be resolved in the original build environments; CI now runs it as a non-blocking job (it passed on `main` at commit `ceeb08c`). The SDK script is the supported path.
 
 ⚠ Run the instrumentation tests only on an **isolated emulator**: they create and delete their own fixtures in the app database.
 
