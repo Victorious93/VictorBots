@@ -32,6 +32,8 @@ More → Providers → *Add a cloud provider*. Enter the API base URL (must be `
 2. In VictorBots: *Add my PC*. Address `https://<pc>:8443/v1`, the token, and (because the installer's certificate is self-signed) the fingerprint. Only that exact certificate is trusted, only for that profile. A publicly trusted certificate (for example from `tailscale cert`) needs no fingerprint.
 3. Press **Check connection**. You should see saved ✓ reachable ✓ credentials accepted ✓ model available ✓. "Real reply received" stays "not run" until you press **Live test**.
 
+**VictorLinux (optional).** If you run VictorLinux on a PC, *Add VictorLinux PC* fills in the endpoint for you (host, port, token and certificate fingerprint are all required). See `docs/VICTORLINUX.md` for how to get the fingerprint, what capability detection does, and the runner-URL rules. A PC token is stored bound to the address **and** the certificate fingerprint: if you change either, enter the token again. After updating from an earlier 0.2.0 build, a PC profile that has a fingerprint asks for its token once more.
+
 VictorBots never enables app-wide cleartext, never trusts all certificates, and refuses a PC profile that has no token. Ollama itself has no authentication: expose it only through the runner (or your own TLS+auth proxy), not directly on `0.0.0.0`.
 
 **Text model ≠ execution.** A PC-hosted model only answers text. Running commands requires the runner's *jobs*, which are limited to the workspaces and commands in its config file. Provider CLIs (Claude Code, Codex, Gemini CLI) are **not** integrated; if you add one as a runner command, its login stays on the PC and VictorBots never sees it.

@@ -85,6 +85,14 @@ public final class Ui {
     return b;
   }
 
+  /** Cyan-outlined action on the dark background; used by the optional VictorLinux preset. */
+  public Button neonButton(String label, Runnable run) {
+    Button b = button(label, run, false);
+    b.setBackground(bg(BG, 16, ACCENT));
+    b.setTextColor(ACCENT);
+    return b;
+  }
+
   public LinearLayout card(LinearLayout parent) {
     LinearLayout l = column();
     l.setPadding(dp(18), dp(16), dp(18), dp(16));

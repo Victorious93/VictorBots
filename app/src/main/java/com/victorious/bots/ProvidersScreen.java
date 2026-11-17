@@ -30,6 +30,7 @@ final class ProvidersScreen {
     for (Profile p : app.profiles.all()) profileCard(body, p);
     body.addView(ui.button("＋  Add a cloud provider (HTTPS API)", () -> edit(null, Policy.Kind.CLOUD), true));
     body.addView(ui.button("＋  Add my PC (authenticated HTTPS)", () -> edit(null, Policy.Kind.PC), true));
+    body.addView(ui.neonButton("＋  Add VictorLinux PC (optional preset)", () -> editVictorLinux(null)));
     body.addView(ui.button("Usage & requests log", () -> h.go("More", "usage", 0), false));
     LinearLayout help = ui.card(body);
     help.addView(ui.text("Connecting your PC", 16, Ui.FG));
@@ -80,7 +81,13 @@ final class ProvidersScreen {
     c.addView(ui.text(Diagnostics.destination(p) + (p.model.isEmpty() ? "" : "\nModel: " + p.model), 13, Ui.MUTED));
     if (p.kind != Policy.Kind.DROIDCOMMAND) {
       boolean hasKey = app.secrets.has(p.id);
-      c.addView(ui.text("Key: " + (hasKey ? "stored encrypted, bound to " + Hosts.host(p.base) : "none stored") + (p.pin.isEmpty() ? "" : "\nPinned certificate: " + p.pin.substring(0, 12) + "…"), 12, hasKey || p.kind == Policy.Kind.CLOUD ? Ui.MUTED : Ui.WARN));
+      boolean keyOk = hasKey && (p.kind != Policy.Kind.PC || app.secrets.usable(p.id, p.binding()));
+      String keyLine = !hasKey ? "none stored" : keyOk ? "stored encrypted, bound to " + Hosts.host(p.base) + (p.kind == Policy.Kind.PC && !p.pin.isEmpty() ? " and its certificate pin" : "") : "stored, but it no longer matches this profile's address or certificate pin (or uses an older format). Edit the profile and enter it again.";
+      c.addView(ui.text("Key: " + keyLine + (p.pin.isEmpty() ? "" : "\nPinned certificate: " + p.pin.substring(0, 12) + "…"), 12, keyOk || p.kind == Policy.Kind.CLOUD ? Ui.MUTED : Ui.WARN));
+      if (p.isVictorLinux()) {
+        Profile.Runner rn = p.runner();
+        c.addView(ui.text(rn == null ? "Runner: not configured. Jobs, routines and connectors stay unavailable for this profile." : "Runner: " + Hosts.host(rn.base) + ":" + VictorLinux.portOf(rn.base) + (rn.separate ? " (separate address: its own token and pin)" : " (same address as this PC: shares its token and pin)"), 12, rn == null ? Ui.ACCENT2 : Ui.ACCENT));
+      }
       String hint = p.kind == Policy.Kind.PC ? Hosts.pcHint(p.base) : "";
       if (!hint.isEmpty()) c.addView(ui.text("⚠ " + hint, 12, Ui.WARN));
     }
@@ -109,6 +116,7 @@ final class ProvidersScreen {
     }
     c.addView(ui.button(p.kind == Policy.Kind.DROIDCOMMAND ? "About this profile" : "Edit", () -> {
       if (p.kind == Policy.Kind.DROIDCOMMAND) ui.info("DroidCommand AI", "Built in. Chat goes through DroidCommand's text interface after you tap Allow there. DroidCommand decides the model and where text goes; VictorBots cannot verify that, so this profile is refused under PC-only policies and for any unattended work (team rounds, routines, memory, routing).");
+      else if (p.isVictorLinux()) editVictorLinux(p);
       else edit(p, p.kind);
     }, false));
   }
@@ -180,6 +188,10 @@ final class ProvidersScreen {
       String newBase = Hosts.base(base.getText().toString());
       String token = key.getText().toString();
       boolean originChanged = existing != null && !existing.base.isEmpty() && !Hosts.origin(existing.base).equals(Hosts.origin(newBase));
+      String pinText = pinF == null ? "" : pinF.getText().toString().trim();
+      String newBinding = Profile.binding(kind, newBase, pinText.isEmpty() ? "" : Rules.pin(pinText));
+      if (pc && token.isEmpty() && existing != null && app.secrets.has(existing.id) && !app.secrets.usable(existing.id, newBinding))
+        throw new IllegalArgumentException("The address or certificate pin changed (or the stored token uses an older format), so the stored token is not reused. Enter the access token again.");
       if (pc && token.isEmpty() && (existing == null || originChanged || !app.secrets.has(existing.id)))
         throw new IllegalArgumentException("A PC profile needs its access token. VictorBots will not call a PC endpoint anonymously.");
       if (originChanged && token.isEmpty() && existing.kind == Policy.Kind.CLOUD && app.secrets.has(existing.id)) {
@@ -189,7 +201,7 @@ final class ProvidersScreen {
       long id = app.profiles.save(existing == null ? 0 : existing.id, name.getText().toString(), kind, newBase, model.getText().toString(), pinF == null ? "" : pinF.getText().toString(), nc);
       if (!token.isEmpty()) {
         try {
-          app.secrets.save(id, Hosts.origin(newBase), token);
+          app.secrets.save(id, newBinding, token);
         } catch (Exception e) {
           throw new IllegalStateException("The key could not be stored securely: " + e.getMessage());
         }
@@ -203,6 +215,126 @@ final class ProvidersScreen {
       f.addView(ui.button("Remove stored key", () -> ui.confirm("Remove key?", "The key for " + existing.name + " will be deleted from this device.", "Remove", () -> { app.secrets.remove(existing.id); h.refresh(); }), false));
     if (existing != null)
       f.addView(ui.button("Delete this profile", () -> ui.confirm("Delete profile?", "Bots using it go back to the default. Its key is deleted.", "Delete", () -> { app.profiles.delete(existing.id); h.refresh(); }), false));
+  }
+
+  /** The optional VictorLinux preset. Never used unless the owner taps "Add VictorLinux PC". */
+  private void editVictorLinux(Profile existing) {
+    LinearLayout f = ui.column();
+    f.setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(12));
+    f.setBackgroundColor(Ui.BG);
+    f.addView(ui.text("VICTORLINUX PC · OPTIONAL PRESET", 11, Ui.ACCENT));
+    f.addView(ui.text("HTTPS only. The access token and the certificate SHA-256 fingerprint are both required, redirects are refused, and only the exact certificate you pin is trusted for this profile.", 12, Ui.MUTED));
+    JSONObject old = existing == null ? new JSONObject() : existing.caps;
+    EditText name = ui.field(f, "Profile name", existing == null ? "VictorLinux" : existing.name, false);
+    EditText host = ui.field(f, "PC host name or IP address (no https://, no port)", existing == null ? "" : Hosts.host(existing.base), false);
+    EditText port = ui.field(f, "Port (blank = " + VictorLinux.DEFAULT_PORT + ")", existing == null ? "" : "" + VictorLinux.portOf(existing.base), false);
+    port.setInputType(InputType.TYPE_CLASS_NUMBER);
+    EditText model = ui.field(f, "Model id (default " + VictorLinux.DEFAULT_MODEL + ", editable)", existing == null ? VictorLinux.DEFAULT_MODEL : existing.model, false);
+    EditText token = ui.field(f, "Access token (required; blank keeps the stored one only if address and pin are unchanged)", "", false);
+    token.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    token.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+    EditText pin = ui.field(f, "Certificate SHA-256 fingerprint (required)", existing == null ? "" : existing.pin, true);
+    f.addView(ui.text("Chat goes to https://<host>:<port>/v1/chat/completions.", 11, Ui.MUTED));
+
+    TextView note = ui.text("Capability detection has not been run.", 12, Ui.MUTED);
+    VictorLinux.Capabilities[] found = {null};
+    String[] foundFor = {""};
+    Switch streaming = ui.toggle(f, "Stream replies (shows first-token time)", old.optBoolean("streaming", true));
+    Switch tools = ui.toggle(f, "Model supports tool calls (VictorBots still never executes them itself)", old.optBoolean("tools", false));
+    Switch images = ui.toggle(f, "Model accepts images", old.optBoolean("images", false));
+    f.addView(ui.neonButton("Detect capabilities (GET " + VictorLinux.CAPABILITIES_PATH + ")", () -> {
+      Provider.Cfg cfg;
+      try {
+        String typed = token.getText().toString();
+        String tok = typed.isEmpty() ? storedToken(existing, host, port, pin) : typed;
+        cfg = VictorLinux.discoveryCfg(host.getText().toString(), port.getText().toString(), pin.getText().toString(), tok);
+      } catch (IllegalArgumentException e) {
+        note.setTextColor(Ui.WARN);
+        note.setText("Cannot detect yet: " + e.getMessage());
+        return;
+      }
+      note.setTextColor(Ui.MUTED);
+      note.setText("Asking the PC… (sends only your token; no chat text; nothing is run)");
+      app.runAsync(() -> {
+        VictorLinux.Capabilities c = VictorLinux.fetch(cfg);
+        h.act().runOnUiThread(() -> {
+          found[0] = c;
+          foundFor[0] = cfg.base + "|" + cfg.pin;
+          note.setTextColor(c.ok ? Ui.ACCENT : Ui.WARN);
+          note.setText(c.describe());
+          if (c.ok && Boolean.TRUE.equals(c.toolCalls)) tools.setChecked(true);
+        });
+      });
+    }));
+    f.addView(note);
+    EditText ctx = ui.field(f, "Context window in tokens (blank = assume 4096)", old.optInt("context_tokens", 0) == 0 ? "" : "" + old.optInt("context_tokens"), false);
+    ctx.setInputType(InputType.TYPE_CLASS_NUMBER);
+
+    f.addView(ui.text("RUNNER (OPTIONAL)", 11, Ui.ACCENT));
+    f.addView(ui.text("Only if you run the VictorBots PC runner. Leave empty and jobs, routines and connectors show “" + VictorLinux.NO_RUNNER + "”. A runner on a different address never receives the PC's token: it needs its own.", 12, Ui.MUTED));
+    EditText runnerUrl = ui.field(f, "Runner URL (e.g. https://host:8443/runner/v1)", old.optString("runner_url"), false);
+    EditText runnerToken = ui.field(f, "Runner access token (only for a different address; blank keeps the stored one)", "", false);
+    runnerToken.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    runnerToken.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+    EditText runnerPin = ui.field(f, "Runner certificate SHA-256 (only for a different address)", old.optString("runner_pin"), true);
+
+    TextView err = ui.text("", 13, Ui.ACCENT2);
+    err.setVisibility(View.GONE);
+    f.addView(err);
+    ui.form(existing == null ? "Add VictorLinux PC" : "Edit " + existing.name, f, "Save", () -> {
+      err.setVisibility(View.GONE);
+      try {
+        JSONObject nc = new JSONObject();
+        for (java.util.Iterator<String> it = old.keys(); it.hasNext(); ) {
+          String k = it.next();
+          nc.put(k, old.get(k));
+        }
+        nc.put("streaming", streaming.isChecked()).put("tools", tools.isChecked()).put("images", images.isChecked());
+        nc.remove("context_tokens");
+        String c = ctx.getText().toString().trim();
+        if (!c.isEmpty()) {
+          int v;
+          try {
+            v = Integer.parseInt(c);
+          } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Context window must be a number.");
+          }
+          if (v < 512 || v > 4_000_000) throw new IllegalArgumentException("Context window must be between 512 and 4,000,000 tokens.");
+          nc.put("context_tokens", v);
+        }
+        long id = app.profiles.saveVictorLinux(existing == null ? 0 : existing.id, name.getText().toString(), host.getText().toString(), port.getText().toString(), model.getText().toString(), pin.getText().toString(), token.getText().toString(), runnerUrl.getText().toString(), runnerPin.getText().toString(), runnerToken.getText().toString(), nc);
+        Profile saved = app.profiles.get(id);
+        VictorLinux.Capabilities cap = found[0];
+        if (cap != null && foundFor[0].equals(saved.base + "|" + saved.pin) && cap.advertised() != null) app.profiles.recordTested(id, "advertised", cap.advertised());
+        if (app.profiles.defaultProfile() == null || app.profiles.all().size() == 2) app.profiles.setDefault(id);
+        reports.remove(id);
+        h.refresh();
+        return true;
+      } catch (IllegalArgumentException | IllegalStateException | JSONException e) {
+        err.setText("⚠ " + (e.getMessage() == null ? "Could not save. Nothing was changed." : e.getMessage()));
+        err.setVisibility(View.VISIBLE);
+        return false;
+      }
+    }, null);
+    if (existing != null) {
+      f.addView(ui.button("Remove stored key", () -> ui.confirm("Remove key?", "The key for " + existing.name + " will be deleted from this device.", "Remove", () -> { app.secrets.remove(existing.id); h.refresh(); }), false));
+      f.addView(ui.button("Delete this profile", () -> ui.confirm("Delete profile?", "Bots using it go back to the default. Its keys are deleted.", "Delete", () -> { app.profiles.delete(existing.id); h.refresh(); }), false));
+    }
+  }
+
+  /** The stored token for the address and pin currently typed, when it is still readable for them. */
+  private String storedToken(Profile existing, EditText host, EditText port, EditText pin) {
+    if (existing == null) return "";
+    try {
+      String binding = Profile.binding(Policy.Kind.PC, VictorLinux.baseUrl(host.getText().toString(), port.getText().toString()), Rules.pin(pin.getText().toString()));
+      return app.secrets.read(existing.id, binding);
+    } catch (SecurityException e) {
+      return "";
+    } catch (IllegalArgumentException e) {
+      throw e;
+    } catch (Exception e) {
+      return "";
+    }
   }
 
   private void discover(Profile existing, EditText base, EditText model) {

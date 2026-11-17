@@ -152,6 +152,14 @@ public final class SmokeInstrumentation extends Instrumentation {
     check(s.read(101, "https://a.example:443").isEmpty() && !s.has(101), "key deletion");
     s.remove(202);
     s.remove(303);
+    // PC profiles bind the certificate pin too: a changed pin cannot read the old token.
+    String pinned = "https://pc.example:8080|pin=" + "AB".repeat(32);
+    s.save(404, pinned, "pin-bound-token-111");
+    check(s.read(404, pinned).equals("pin-bound-token-111") && s.usable(404, pinned), "keystore round trip bound to origin+pin");
+    refuses(() -> s.read(404, "https://pc.example:8080|pin=" + "CD".repeat(32)), "key refuses to decrypt for a different pin");
+    refuses(() -> s.read(404, "https://pc.example:8080"), "key stored with a pin refuses to decrypt without it");
+    check(!s.usable(404, "https://pc.example:8080|pin=" + "CD".repeat(32)), "usable() is false for a different pin and never throws");
+    s.remove(404);
   }
 
   // ---------------------------------------------------------------- 3. legacy single-key migration
@@ -307,7 +315,7 @@ public final class SmokeInstrumentation extends Instrumentation {
     Profiles profiles = new Profiles(db, kv, secrets);
     String base = "https://10.0.2.2:" + port + "/v1";
     long pc = profiles.save(0, "live-pc", Policy.Kind.PC, base, "stub-model", pin, new JSONObject().put("streaming", true));
-    secrets.save(pc, Hosts.origin(base), token);
+    secrets.save(pc, profiles.get(pc).binding(), token);
     Gateway gw = new Gateway(db, profiles, secrets, Gateway.LIVE);
     Diagnostics diag = new Diagnostics(db, profiles, secrets, gw);
     Diagnostics.Report probe = diag.probe(profiles.get(pc));
@@ -320,14 +328,14 @@ public final class SmokeInstrumentation extends Instrumentation {
     check(live.inTokens != null && live.inTokens == 17L && live.outTokens == 3L, "LIVE token usage as reported by the server");
     // Wrong pin and unpinned self-signed are both rejected by Android's TLS stack.
     long bad = profiles.save(0, "live-badpin", Policy.Kind.PC, base, "stub-model", "AB".repeat(32), null);
-    secrets.save(bad, Hosts.origin(base), token);
+    secrets.save(bad, profiles.get(bad).binding(), token);
     Diagnostics.Report badRep = diag.probe(profiles.get(bad));
     check(badRep.reachable.state == Diagnostics.State.FAILED && badRep.reachable.detail.contains("TLS"), "LIVE wrong certificate pin rejected on Android: " + badRep.reachable.detail);
     db.update("UPDATE profiles SET pin='' WHERE id=?", bad);
     check(diag.probe(profiles.get(bad)).reachable.state == Diagnostics.State.FAILED, "LIVE self-signed certificate without a pin rejected");
     // Real job flow through the app's own client, store and monitor.
     Jobs jobs = new Jobs(db);
-    JobMonitor mon = new JobMonitor(db, jobs, id -> new RunnerClient(profiles.get(pc), secrets.read(pc, Hosts.origin(base))));
+    JobMonitor mon = new JobMonitor(db, jobs, id -> new RunnerClient(profiles.get(pc), secrets.read(pc, profiles.get(pc).binding())));
     long j = jobs.create("live list", 0, 0, 0, "PC", pc, "repo.list", new JSONObject().put("path", "."), 0, 0);
     mon.submit(j, "main");
     for (int i = 0; i < 60 && !jobs.get(j).state.terminal(); i++) { mon.pollOnce(); Thread.sleep(250); }

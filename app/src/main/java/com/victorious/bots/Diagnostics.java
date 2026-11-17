@@ -90,6 +90,8 @@ public final class Diagnostics {
       Hosts.base(p.base);
       boolean keyOk = !Profile.requiresKey(p.kind) || secrets.has(p.id);
       if (!keyOk) r.saved.set(State.FAILED, "Saved, but this PC profile has no access token. It will not be called anonymously.");
+      else if (Profile.requiresKey(p.kind) && !secrets.usable(p.id, p.binding()))
+        r.saved.set(State.FAILED, "Saved, but the stored token no longer matches this profile's address or certificate pin (or uses an older format). Edit the profile and enter it again.");
       else r.saved.set(State.OK, "Endpoint saved" + (secrets.has(p.id) ? ", key stored encrypted." : ", no key stored."));
     } catch (IllegalArgumentException e) {
       r.saved.set(State.FAILED, e.getMessage());
@@ -115,9 +117,9 @@ public final class Diagnostics {
     }
     String key;
     try {
-      key = secrets.read(p.id, Hosts.origin(p.base));
+      key = secrets.read(p.id, p.binding());
     } catch (SecurityException e) {
-      r.auth.set(State.FAILED, "The stored key belongs to a different endpoint; enter it again.");
+      r.auth.set(State.FAILED, "The stored key does not match this profile's endpoint or certificate pin; enter it again.");
       return r;
     } catch (Exception e) {
       r.auth.set(State.FAILED, "The stored key could not be decrypted; enter it again.");
