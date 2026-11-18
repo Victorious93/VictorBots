@@ -29,5 +29,13 @@ with ZipFile('app/build/sdk/unsigned.apk','a',ZIP_DEFLATED) as z:
  for p in Path('app/build/sdk/dex').glob('*.dex'):z.write(p,p.name)
 PY
 "$sdk_tools/zipalign" -f -p 4 app/build/sdk/unsigned.apk app/build/sdk/aligned.apk
-"$sdk_tools/apksigner" sign --ks signing/victorbots-debug.jks --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out app/build/sdk/VictorBots-0.2.0-debug.apk app/build/sdk/aligned.apk
-"$sdk_tools/apksigner" verify --verbose --print-certs app/build/sdk/VictorBots-0.2.0-debug.apk
+if [ -n "${VB_RELEASE_KEYSTORE:-}" ]; then
+  # Production signing: passwords come from the environment (never the command line history of a log).
+  : "${VB_RELEASE_KEY_ALIAS:?}" "${VB_RELEASE_STORE_PASS:?}" "${VB_RELEASE_KEY_PASS:?}"
+  out=app/build/sdk/VictorBots-0.2.0-release.apk
+  "$sdk_tools/apksigner" sign --ks "$VB_RELEASE_KEYSTORE" --ks-key-alias "$VB_RELEASE_KEY_ALIAS" --ks-pass env:VB_RELEASE_STORE_PASS --key-pass env:VB_RELEASE_KEY_PASS --out "$out" app/build/sdk/aligned.apk
+else
+  out=app/build/sdk/VictorBots-0.2.0-debug.apk
+  "$sdk_tools/apksigner" sign --ks signing/victorbots-debug.jks --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$out" app/build/sdk/aligned.apk
+fi
+"$sdk_tools/apksigner" verify --verbose --print-certs "$out"
