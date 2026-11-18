@@ -1,5 +1,12 @@
 # Victorious Framework — VictorBots verification
 
+## Release readiness — 2026-11-18
+
+Change on top of `main` 0e268d2: `scripts/build-sdk.sh` can sign with a production keystore (`VB_RELEASE_*` environment variables, output `VictorBots-0.2.0-release.apk`); new manual `.github/workflows/release.yml` builds with repository secrets, refuses an APK signed with the public debug key, and only creates a **draft** release.
+
+* Run: `bash scripts/test-jvm.sh` (17 suites, 0 failed); `python3 -I pc-runner/test_runner.py` OK (1 skipped); `scripts/build-sdk.sh` and `scripts/build-test-sdk.sh` built locally with SDK platform 35 / build-tools 35.0.0 (first local compile of the connector-tools UI code); default debug build still verifies with the unchanged debug signer. Main's CI run for 0e268d2 is green.
+* **Not run:** the production signing path and `release.yml` (no keystore exists; never executed); instrumentation tests and on-device checks (no KVM or emulator in this environment); real provider, DroidCommand, physical device. **No release has been published.** A production release is blocked on the owner creating a private keystore and on the DroidCommand registration/pin matching it.
+
 ## Chat polish (markdown, copy, retry, edit and resend) — 2026-11-17
 
 Change on top of `main` bbc46c9: `Markdown` (parser), `MarkdownView` (platform views), `ChatHistory` (retry/edit logic), copy and action buttons in chat bubbles. No schema migration: a replaced message keeps its row with status `replaced`, which every prompt, summary, memory and export query already excludes (they read `done`/`error` only).
