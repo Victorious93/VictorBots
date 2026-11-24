@@ -187,5 +187,33 @@ public final class CommsCodec {
         + "\nAvailability is what droidcommand-AI reports; nothing has been sent.";
   }
 
+  /**
+   * Plain words for the answer to {@code communications.list_conversations}. Titles are the owner's own saved conversations,
+   * shown only on this phone. Says what was read and that nothing was sent or changed.
+   */
+  public static String describeConversations(Reply r) {
+    if (r.transport.length() > 0 || !r.parsed || !r.ok || !"completed".equals(r.state)) {
+      if ("not_granted".equals(r.code))
+        return "droidcommand-AI has not allowed VictorBots to read messages. In DroidCommand open Communications, choose Allow an app, pick VictorBots and tick the read permissions. Nothing was read.";
+      return describe(r);
+    }
+    try {
+      JSONObject res = new JSONObject(r.resultJson);
+      JSONArray list = res.optJSONArray("conversations");
+      if (list == null) return "droidcommand-AI answered, but not with a conversation list. Nothing was changed.";
+      if (list.length() == 0)
+        return "No conversation is shared with the assistant yet. In VictorSMS open a saved conversation and switch on \"Let my assistant read this conversation\". Read only: nothing was sent or changed.";
+      StringBuilder b = new StringBuilder(list.length() + " conversation" + (list.length() == 1 ? "" : "s") + " shared with the assistant:");
+      for (int i = 0; i < list.length() && i < 20; i++) {
+        JSONObject c = list.getJSONObject(i);
+        String title = c.optString("title", "").trim();
+        b.append("\n• ").append(title.isEmpty() ? "(no title)" : Redact.snippet(title, 60)).append(" · ").append(c.optLong("message_count", 0)).append(" messages");
+      }
+      return b.append("\nRead only: nothing was sent or changed.").toString();
+    } catch (JSONException e) {
+      return "droidcommand-AI answered, but the list could not be read. Nothing was changed.";
+    }
+  }
+
   private CommsCodec() {}
 }
