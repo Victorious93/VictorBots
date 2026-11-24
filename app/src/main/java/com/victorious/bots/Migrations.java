@@ -10,7 +10,7 @@ import java.util.List;
  * foreign_key_check afterwards.
  */
 public final class Migrations {
-  public static final int VERSION = 3;
+  public static final int VERSION = 4;
 
   /** The schema shipped in VictorBots 0.1.0 (database version 1), unchanged. */
   public static List<String> v1() {
@@ -167,6 +167,35 @@ public final class Migrations {
     return s;
   }
 
+  /**
+   * 0.4.0 (communications agents). Purely additive: no existing table is altered, so every bot, chat, job and memory
+   * from 0.3.0 is untouched. Style profiles hold only statistics and short examples of the OWNER'S OWN outgoing
+   * messages. Learned preferences and approved examples are separate rows so each can be reviewed and removed.
+   */
+  public static List<String> v4() {
+    List<String> s = new ArrayList<>();
+    s.add("CREATE TABLE style_profiles(id INTEGER PRIMARY KEY AUTOINCREMENT,uid TEXT NOT NULL UNIQUE,name TEXT NOT NULL,scope TEXT NOT NULL DEFAULT 'global',"
+        + "contacts TEXT NOT NULL DEFAULT '[]',bot_uid TEXT NOT NULL DEFAULT '',strength INTEGER NOT NULL DEFAULT 60,preserve_spelling INTEGER NOT NULL DEFAULT 1,"
+        + "learn_from_edits INTEGER NOT NULL DEFAULT 0,current_version INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,updated INTEGER NOT NULL)");
+    s.add("CREATE TABLE style_versions(id INTEGER PRIMARY KEY AUTOINCREMENT,profile INTEGER NOT NULL REFERENCES style_profiles(id) ON DELETE CASCADE,"
+        + "version INTEGER NOT NULL,stats TEXT NOT NULL,examples TEXT NOT NULL DEFAULT '[]',source_count INTEGER NOT NULL DEFAULT 0,"
+        + "sources TEXT NOT NULL DEFAULT '[]',confidence TEXT NOT NULL DEFAULT 'low',note TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,UNIQUE(profile,version))");
+    s.add("CREATE TABLE style_prefs(id INTEGER PRIMARY KEY AUTOINCREMENT,profile INTEGER NOT NULL REFERENCES style_profiles(id) ON DELETE CASCADE,"
+        + "kind TEXT NOT NULL,text TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL)");
+    s.add("CREATE TABLE style_examples(id INTEGER PRIMARY KEY AUTOINCREMENT,profile INTEGER NOT NULL REFERENCES style_profiles(id) ON DELETE CASCADE,"
+        + "text TEXT NOT NULL,source TEXT NOT NULL,created INTEGER NOT NULL)");
+    s.add("CREATE TABLE comm_bots(bot INTEGER PRIMARY KEY REFERENCES bots(id) ON DELETE CASCADE,mode TEXT NOT NULL DEFAULT 'APPROVAL',profile_uid TEXT NOT NULL DEFAULT '',"
+        + "contacts TEXT NOT NULL DEFAULT '[]',hours_start INTEGER NOT NULL DEFAULT -1,hours_end INTEGER NOT NULL DEFAULT -1,max_per_hour INTEGER NOT NULL DEFAULT 4,"
+        + "paused INTEGER NOT NULL DEFAULT 0,disclose INTEGER NOT NULL DEFAULT 1,voice_needs_approval INTEGER NOT NULL DEFAULT 1,updated INTEGER NOT NULL)");
+    // One bot per conversation: two bots can never be assigned the same chat.
+    s.add("CREATE TABLE comm_assign(conversation TEXT PRIMARY KEY,bot INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,created INTEGER NOT NULL)");
+    s.add("CREATE TABLE comm_activity(id INTEGER PRIMARY KEY AUTOINCREMENT,bot INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,kind TEXT NOT NULL,"
+        + "detail TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL)");
+    s.add("CREATE INDEX comm_activity_bot ON comm_activity(bot,created)");
+    s.add("CREATE TABLE comm_state(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
+    return s;
+  }
+
   public static void run(Db db, List<String> sql) {
     for (String s : sql) db.exec(s);
   }
@@ -176,6 +205,7 @@ public final class Migrations {
     if (from < 1) run(db, v1());
     if (from < 2) run(db, v2());
     if (from < 3) run(db, v3());
+    if (from < 4) run(db, v4());
   }
 
   private Migrations() {}
