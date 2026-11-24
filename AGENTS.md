@@ -10,3 +10,10 @@ Read README.md, ARCHITECTURE.md and VERIFICATION.md first. Build with scripts/bu
 * `pc-runner/` is the PC backend. Its tests (`test_runner.py`) and `tests/jvm/RunnerTest.java` must stay green. Keep the phone unable to pass argv or paths outside workspaces.
 * Run `bash scripts/test-jvm.sh` and the instrumentation tests (isolated emulator only) before claiming a change works. Record what was and was not run in `VERIFICATION.md`.
 * DroidCommand execution is the separate `COMPANION_EXEC` contract in droidcommand-AI (`docs/COMPANION_EXEC.md`). Do not add accessibility/root/shell code here.
+
+## 0.4.0 additions: communications agents (read before changing these areas)
+* `StyleAnalyzer` receives only the OWNER'S OWN outgoing messages. Never pass incoming text, and never let unapproved AI text teach a style: `StyleProfiles.record` learns nothing from an approved, rejected or regenerated draft, and from an edit only if the owner allowed it or saved it. `StyleTest` guards this.
+* A new communications bot starts in Approval mode. `CommsBots` checks are advisory; the authority to send is an owner-created grant in droidcommand-AI plus a VictorSMS rule. Never add a way for VictorBots to approve, grant or auto-run a send, and never create a bot-originated job that skips `PROPOSED`.
+* `CommsCodec` maps only what droidcommand-AI reports, through `Jobs.applyRemote`. Only `completed` with `ok:true` completes a job; `unknown` becomes "outcome unknown" and is never resent. The contract lives in droidcommand-AI (`docs/COMPANION_COMMS.md`); change it there first.
+* Schema v4 is additive. Style/communication tables are NOT in backup v2 yet (profiles have their own export/import, which carries no contacts or ids).
+

@@ -92,6 +92,14 @@ Run:
 
 NOT run for this change: the instrumentation tests (`SmokeInstrumentation`; so the new Keystore pin-binding checks have **not** executed), Gradle. The new form (`ProvidersScreen.editVictorLinux`) was compiled but never rendered or clicked: layout, the preset form's rendering in the dialog (it uses only `Ui.BG`/`ACCENT`/`ACCENT2`, which `ThemeTest` scans), inline error display and the Detect button's UI thread hand-off are unverified. `/victor/capabilities` and VictorLinux's `/v1` + port 8080 conventions come from the task description; the real VictorLinux was not contacted. Pointing the PC runner at VictorLinux is **not supported** (see `docs/VICTORLINUX.md`).
 
+## Communications agents (schema v4) — 2026-11-24
+
+**Run (this environment: JDK 21, `scripts/test-jvm.sh`, real SQLite via sqlite-jdbc):** full suite green, 0 failures, including `GatewayTest` (still no second model path).
+New: `StyleTest` 81 checks, `CommsTest` 68 checks; `MigrationTest` 25 (now expects version 4; v3→v4 upgrade preserves existing bots and equals a fresh install).
+Six deliberate breaks (an edit teaches without permission, approved AI text becomes an example, two bots on one conversation, `unknown` read as completed, links allowed in examples, a contradictory reply read as completed) were each caught, then reverted.
+
+**NOT run / NOT verified:** instrumentation tests and any emulator or device (none available); the `SQLiteOpenHelper` upgrade path on Android (only the JVM `Migrations.upgrade` was run); the build via `scripts/build-sdk.sh` and the APK; any real droidcommand-AI, VictorSMS or model. There is no Android UI, service or connector for these features yet, so nothing here is user-visible. Style quality against real conversations is unmeasured. The new tables are not in backup v2.
+
 ## 0.1.0 history (kept)
 
 
