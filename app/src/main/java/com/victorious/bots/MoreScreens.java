@@ -533,6 +533,17 @@ final class MoreScreens {
         h.act().runOnUiThread(() -> ui.info("Messaging connection", text));
       }).start();
     }, false));
+    comms.addView(ui.button("List conversations shared with the assistant", () -> {
+      String trusted = prefs.getString("pin", DcaBridge.DEBUG_PIN);
+      new Thread(() -> {
+        CommsClient client = new CommsClient(new MessengerComms(h.act(), trusted));
+        java.util.Map<String, String> args = new java.util.LinkedHashMap<>();
+        args.put("limit", "10");
+        CommsCodec.Reply r = client.call(client.newRequestId(), "communications.list_conversations", args, null, null, "Owner check from the DroidCommand screen");
+        String text = CommsCodec.describeConversations(r);
+        h.act().runOnUiThread(() -> ui.info("Shared conversations", text));
+      }).start();
+    }, false));
     LinearLayout form = ui.card(body);
     EditText pin = ui.field(form, "Trusted DroidCommand certificate SHA-256", prefs.getString("pin", DcaBridge.DEBUG_PIN), true);
     form.addView(ui.button("Save pin", () -> { try { prefs.edit().putString("pin", Rules.pin(pin.getText().toString())).putBoolean("dca_verified", false).apply(); ui.toast("Pin saved"); h.refresh(); } catch (Exception e) { h.error(e); } }, true));

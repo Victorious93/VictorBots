@@ -102,6 +102,22 @@ public final class CommsClientTest {
     T.check("an unreadable reply is said to be unreadable", CommsCodec.describe(CommsCodec.parse("???")).contains("could not read"));
     T.check("a version mismatch names both ranges", CommsCodec.describe(CommsCodec.parse("{\"v\":1,\"ok\":false,\"code\":\"incompatible_version\",\"versions\":{\"min\":2,\"max\":3}}")).contains("2 to 3"));
 
+    // ---- the list of shared conversations, in words ----
+    CommsCodec.Reply two = CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"result\":{\"conversations\":[{\"id\":\"a\",\"title\":\"Sam\",\"message_count\":42},{\"id\":\"b\",\"title\":\"\",\"message_count\":3}],\"count\":2}}");
+    String shown = CommsCodec.describeConversations(two);
+    T.check("it names the shared conversations with their sizes", shown.contains("2 conversations") && shown.contains("Sam · 42 messages") && shown.contains("(no title) · 3 messages"));
+    T.check("it says nothing was sent or changed", shown.contains("nothing was sent or changed"));
+    String longTitle = "x".repeat(200);
+    CommsCodec.Reply wide = CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"result\":{\"conversations\":[{\"id\":\"a\",\"title\":\"" + longTitle + "\",\"message_count\":1}],\"count\":1}}");
+    T.check("a very long title is clipped, not dumped on the screen", !CommsCodec.describeConversations(wide).contains("x".repeat(100)));
+    CommsCodec.Reply none = CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"result\":{\"conversations\":[],\"count\":0}}");
+    T.check("an empty list says how to share one", CommsCodec.describeConversations(none).contains("Let my assistant read this conversation"));
+    CommsCodec.Reply denied = CommsCodec.parse("{\"v\":1,\"ok\":false,\"state\":\"refused\",\"code\":\"not_granted\",\"detail\":\"Not granted: read_messages.\"}");
+    T.check("a missing grant says where the owner allows it", CommsCodec.describeConversations(denied).contains("Allow an app") && CommsCodec.describeConversations(denied).contains("Nothing was read"));
+    T.check("a refusal from the other app is passed on in words", CommsCodec.describeConversations(CommsCodec.parse("{\"v\":1,\"ok\":false,\"state\":\"refused\",\"code\":\"backend_unavailable\",\"detail\":\"VictorSMS has not granted droidcommand-AI the Archive read permission.\"}")).contains("Archive read permission"));
+    T.check("nothing sent is reported as such", CommsCodec.describeConversations(CommsCodec.notSent("pin")).contains("Nothing was sent"));
+    T.check("a list of the wrong shape is not pretended to be one", CommsCodec.describeConversations(CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"result\":{\"x\":1}}")).contains("not with a conversation list"));
+
     // ---- through the jobs, like every other backend report ----
     Fakes.Env e = Fakes.env();
     Jobs jobs = new Jobs(e.db);
