@@ -43,6 +43,7 @@ VictorBots owns bot profiles, conversations, team coordination, memory controls 
 | **Backup** | Versioned export (v2); restore with preview, conflict handling (keep mine / add copies), validation, one transaction, integrity check. Never exports keys, avatars, logs or policy. Reads 0.1.0 (v1) backups. |
 | **Routines** | Opt-in, created switched off. PC routines run on the PC runner's clock (continue when the phone is offline). Phone routines use Android's inexact JobScheduler (≈15 min at best) and the same policy. A run is *succeeded* only after its work finished. |
 | **Connectors** | Read-only access through MCP servers *your PC runner is configured to expose*, enabled per bot, revocable. Owner-driven attach, or (opt-in per bot, workspace chosen by you) the bot's model can call the allow-listed read-only tools itself, bounded and listed under each reply. No write/exec tools. VictorBots installs nothing. *Model-driven calls: unit-tested only, not run on a device or with a real model.* |
+| **Communication agents (preview)** | Writing-style profiles from your own messages (versions, rollback, corrections that never learn from unapproved AI text), per-conversation bot assignment, Approval-mode default, and the `COMPANION_COMMS` client codec. **JVM-tested only: no screen, no service, never run on a device.** See `ARCHITECTURE.md`, `MANUAL.md` §10, `VERIFICATION.md`. |
 
 ## Screenshots
 

@@ -58,7 +58,7 @@ public final class MigrationTest {
     JdbcDb up = new JdbcDb("jdbc:sqlite::memory:");
     up.exec("PRAGMA foreign_keys=OFF");
     up.tx(() -> { Migrations.upgrade(up, 0); return null; });
-    T.eq("schema version", 3, Migrations.VERSION);
+    T.eq("schema version", 4, Migrations.VERSION);
     long ub = up.insert("INSERT INTO bots(name,description,instructions,avatar,uid) VALUES('B','d','i','x','u')");
     up.exec("INSERT INTO bot_connectors(bot,connector,profile,tools) VALUES(" + ub + ",'repo',1,'[\"read_text_file\"]')");
     T.eq("new connector rows default to auto=0", 0L, up.one("SELECT auto FROM bot_connectors").optLong("auto"));

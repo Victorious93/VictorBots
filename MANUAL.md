@@ -81,3 +81,14 @@ Jobs tab. Create a draft (PC runner tool, DroidCommand capability, or manual not
 | Job *outcome unknown* | The connection broke after sending. Use **Check status**; if the runner has no record you may start a new job. |
 | DroidCommand refuses | It must include `COMPANION_EXEC`, be paired and match the pinned certificate (More → DroidCommand link). |
 | Estimated tokens | The server did not report usage; figures are labelled estimates. |
+
+## 10. Communication bots and writing styles (developer preview — no screen yet)
+
+*Victorious Framework. The engine is built and tested on a computer; **VictorBots has no screen for it yet.** This describes what it will do and the limits it already enforces.*
+
+* **Writing style:** built only from messages **you** wrote (VictorSMS filters incoming and bot-sent text out). It records habits, such as short messages, lowercase starts, emoji, slang and sending several texts in a row. It does not train or change any model. Examples it keeps never contain links, email addresses or phone numbers.
+* **Profiles:** one general profile and any number for particular people or groups. Each analysis creates a new version; you can compare versions and restore an older one (it is copied forward, nothing is lost). Profiles can be duplicated, reset, exported and imported; an exported profile carries no contacts or ids.
+* **Corrections:** approving a bot's draft as-is, rejecting it or asking for another does **not** teach the style. Editing a draft teaches it only if you allowed that for the profile, or you saved the edit as an example. Quick adjustments (shorter, less formal, fewer emoji, keep my spelling, split into several messages, "never say this", "say this more") are listed and can each be removed.
+* **Bots:** a new communication bot starts in **Approval** mode. One bot per conversation. You can pause one bot or all of them. These limits only decide whether a bot *asks*; permission to send is a separate grant you give in droidcommand-AI plus a rule in VictorSMS.
+* **Not available yet:** the screens, the connection to droidcommand-AI and VictorSMS on the phone, voice messages and calls.
+
