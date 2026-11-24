@@ -82,7 +82,7 @@ Jobs tab. Create a draft (PC runner tool, DroidCommand capability, or manual not
 | DroidCommand refuses | It must include `COMPANION_EXEC`, be paired and match the pinned certificate (More → DroidCommand link). |
 | Estimated tokens | The server did not report usage; figures are labelled estimates. |
 
-## 10. Communication bots and writing styles (developer preview — no screen yet)
+## 10. Communication bots and writing styles (developer preview — one check screen, nothing else yet)
 
 *Victorious Framework. The engine is built and tested on a computer; **VictorBots has no screen for it yet.** This describes what it will do and the limits it already enforces.*
 
@@ -90,5 +90,6 @@ Jobs tab. Create a draft (PC runner tool, DroidCommand capability, or manual not
 * **Profiles:** one general profile and any number for particular people or groups. Each analysis creates a new version; you can compare versions and restore an older one (it is copied forward, nothing is lost). Profiles can be duplicated, reset, exported and imported; an exported profile carries no contacts or ids.
 * **Corrections:** approving a bot's draft as-is, rejecting it or asking for another does **not** teach the style. Editing a draft teaches it only if you allowed that for the profile, or you saved the edit as an example. Quick adjustments (shorter, less formal, fewer emoji, keep my spelling, split into several messages, "never say this", "say this more") are listed and can each be removed.
 * **Bots:** a new communication bot starts in **Approval** mode. One bot per conversation. You can pause one bot or all of them. These limits only decide whether a bot *asks*; permission to send is a separate grant you give in droidcommand-AI plus a rule in VictorSMS.
-* **Not available yet:** the screens, the connection to droidcommand-AI and VictorSMS on the phone, voice messages and calls.
+* **Check the connection (built, never tried on a phone):** More → DroidCommand → **Check messaging connection**. VictorBots asks DroidCommand which messaging capabilities it can offer right now and shows the answer in plain words, for example "Connected. 3 of 27 messaging capabilities are available" with the reason for each one that is not. It **sends nothing to anyone**. If DroidCommand has not allowed VictorBots yet, it says so and where to fix it (DroidCommand → Connected apps); VictorBots cannot allow itself. Before connecting, VictorBots checks that the installed DroidCommand has the signing certificate you pinned on that same screen; if not, nothing is sent.
+* **Not available yet:** screens for profiles and bots, any bot that actually uses the connection, voice messages and calls.
 

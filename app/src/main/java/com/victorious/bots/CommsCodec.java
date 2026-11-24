@@ -55,6 +55,12 @@ public final class CommsCodec {
     public boolean parsed, ok;
     public String state = "", code = "", detail = "", requestId = "", approvalId = "", jobId = "", resultJson = "{}";
     public int minVersion = -1, maxVersion = -1;
+    /**
+     * Empty for a reply droidcommand-AI produced. {@code not_sent} or {@code no_reply} for an outcome this app decided
+     * itself because there was no reply: {@code not_sent} means nothing left this app; {@code no_reply} means the request
+     * was handed over and nothing came back, so it may have run.
+     */
+    public String transport = "";
     /** capability id to "available" or the reason it is unavailable. */
     public Map<String, String> capabilities = new LinkedHashMap<>();
 
@@ -99,8 +105,30 @@ public final class CommsCodec {
     return r;
   }
 
+  /** Nothing left this app: the pinned certificate did not match, droidcommand-AI is absent, or the connection was refused. */
+  public static Reply notSent(String detail) {
+    Reply r = new Reply();
+    r.transport = "not_sent";
+    r.state = "failed";
+    r.code = "not_sent";
+    r.detail = Redact.snippet(detail == null ? "" : detail, 300);
+    return r;
+  }
+
+  /** Handed over, nothing came back: it may or may not have run. Never to be resent automatically. */
+  public static Reply noReply(String detail) {
+    Reply r = new Reply();
+    r.transport = "no_reply";
+    r.state = "unknown";
+    r.code = "outcome_unknown";
+    r.detail = Redact.snippet(detail == null ? "" : detail, 300);
+    return r;
+  }
+
   /** The job state a reply justifies, or null if it justifies none. Anything not listed here changes nothing. */
   public static Jobs.State stateFor(Reply r) {
+    if ("no_reply".equals(r.transport)) return Jobs.State.UNKNOWN;
+    if ("not_sent".equals(r.transport)) return Jobs.State.DRAFT;
     if (!r.parsed) return null;
     switch (r.state) {
       case "completed": return r.ok ? Jobs.State.COMPLETED : null; // a contradictory reply is never a completion
@@ -117,6 +145,13 @@ public final class CommsCodec {
   public static boolean apply(Jobs jobs, long jobId, Reply r) {
     Jobs.State s = stateFor(r);
     if (s == null) return false;
+    if (s == Jobs.State.DRAFT) {
+      // Nothing left this app, so the job goes back to a draft the owner can send again. Only a job being sent can go back.
+      Jobs.Job before = jobs.get(jobId);
+      if (before == null || before.state != Jobs.State.SUBMITTING) return false;
+      jobs.markNotSent(jobId, r.detail);
+      return true;
+    }
     if (s == Jobs.State.UNKNOWN) {
       Jobs.Job before = jobs.get(jobId);
       if (before == null || before.state.terminal() || before.state == Jobs.State.UNKNOWN) return false;
@@ -130,6 +165,26 @@ public final class CommsCodec {
     if (s == Jobs.State.COMPLETED) remote.resultJson = r.resultJson.length() > 8000 ? "{}" : r.resultJson;
     remote.finished = System.currentTimeMillis();
     return jobs.applyRemote(jobId, remote);
+  }
+
+  /** Plain words for the owner about what a discovery (or any) reply says. Never claims more than the reply did. */
+  public static String describe(Reply r) {
+    if ("not_sent".equals(r.transport)) return "Not connected: " + (r.detail.isEmpty() ? "the request could not be sent" : r.detail) + "\nNothing was sent.";
+    if ("no_reply".equals(r.transport)) return "droidcommand-AI did not reply in time. If a request was sent it may have run; it was not repeated.\n" + r.detail;
+    if (!r.parsed) return "droidcommand-AI sent a reply this app could not read. Nothing was changed.";
+    if ("not_paired".equals(r.code)) return "droidcommand-AI has not allowed VictorBots yet. Open droidcommand-AI, go to Connected apps, and allow VictorBots. Nothing ran.\n" + r.detail;
+    if (r.incompatible()) return "droidcommand-AI speaks messaging versions " + r.minVersion + " to " + r.maxVersion + "; this app speaks " + MIN_VERSION + " to " + MAX_VERSION + ". Update the older app.";
+    if (!r.ok) return "droidcommand-AI refused (" + (r.code.isEmpty() ? r.state : r.code) + "): " + r.detail;
+    if (r.capabilities.isEmpty()) return "droidcommand-AI answered: " + (r.state.isEmpty() ? "ok" : r.state) + ".";
+    int up = 0;
+    StringBuilder down = new StringBuilder();
+    for (Map.Entry<String, String> e : r.capabilities.entrySet()) {
+      if ("available".equals(e.getValue())) up++;
+      else down.append("\n• ").append(e.getKey().replace("communications.", "")).append(": ").append(Redact.snippet(e.getValue(), 120));
+    }
+    return "Connected. " + up + " of " + r.capabilities.size() + " messaging capabilities are available right now."
+        + (down.length() == 0 ? "" : "\nNot available:" + down)
+        + "\nAvailability is what droidcommand-AI reports; nothing has been sent.";
   }
 
   private CommsCodec() {}

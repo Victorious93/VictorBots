@@ -522,6 +522,17 @@ final class MoreScreens {
     }
     status.addView(ui.text("Text chat (COMPANION_ASSIST): " + (prefs.getBoolean("dca_verified", false) ? "a reply was received before" : "not verified yet") + ". A matching certificate alone does not prove registration.\nExecution (COMPANION_EXEC): separate contract, needs a DroidCommand build that includes it. Discovery/receipt/Allow all happen in DroidCommand; VictorBots has no approve button of its own.", 12, Ui.MUTED));
     status.addView(ui.button("Show installed fingerprint", () -> { try { ui.info("DroidCommand SHA-256", DcaBridge.fingerprint(h.act())); } catch (Exception e) { h.error(e); } }, false));
+    LinearLayout comms = ui.card(body);
+    comms.addView(ui.text("Messaging (COMPANION_COMMS)", 14, Ui.ACCENT));
+    comms.addView(ui.text("The unattended contract for texting tools. VictorBots only asks and shows the answer: allowing this app, every grant and every approval happen in DroidCommand. This check sends nothing to anyone; it asks DroidCommand what it can do right now.", 12, Ui.MUTED));
+    comms.addView(ui.button("Check messaging connection", () -> {
+      String trusted = prefs.getString("pin", DcaBridge.DEBUG_PIN);
+      new Thread(() -> {
+        CommsCodec.Reply r = new CommsClient(new MessengerComms(h.act(), trusted)).discover();
+        String text = CommsCodec.describe(r);
+        h.act().runOnUiThread(() -> ui.info("Messaging connection", text));
+      }).start();
+    }, false));
     LinearLayout form = ui.card(body);
     EditText pin = ui.field(form, "Trusted DroidCommand certificate SHA-256", prefs.getString("pin", DcaBridge.DEBUG_PIN), true);
     form.addView(ui.button("Save pin", () -> { try { prefs.edit().putString("pin", Rules.pin(pin.getText().toString())).putBoolean("dca_verified", false).apply(); ui.toast("Pin saved"); h.refresh(); } catch (Exception e) { h.error(e); } }, true));
