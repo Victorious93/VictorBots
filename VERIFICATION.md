@@ -100,6 +100,13 @@ Six deliberate breaks (an edit teaches without permission, approved AI text beco
 
 **NOT run / NOT verified:** instrumentation tests and any emulator or device (none available); the `SQLiteOpenHelper` upgrade path on Android (only the JVM `Migrations.upgrade` was run); the build via `scripts/build-sdk.sh` and the APK; any real droidcommand-AI, VictorSMS or model. There is no Android UI, service or connector for these features yet, so nothing here is user-visible. Style quality against real conversations is unmeasured. The new tables are not in backup v2.
 
+## Messaging client (COMPANION_COMMS outgoing call) — 2026-11-24c
+
+**Run (this environment: JDK 17, `scripts/test-jvm.sh`, real SQLite):** full suite green, 0 failures. New `CommsClientTest` 43 checks (what is sent, a fresh nonce for every send, one attempt only, `not_sent` vs `no_reply` and the job state each justifies, refusal before sending for a bad capability or request id, another request's reply discarded, the words the owner reads, and the job transitions including "a late not-sent report cannot pull a completed job back"). `CommsTest` 68 and the rest unchanged and green. `scripts/build-sdk.sh` compiled `MessengerComms` and the screen card against the real SDK and produced a signed debug APK; the manifest is unchanged (no exported component added).
+Eight deliberate breaks (nonce reused, not-sent reported as unknown, a post-hand-over failure reported as not sent, another request's reply accepted, the injected clock ignored, no-reply justifying no state, a not-sent report able to pull any job back to a draft, the owner not told nothing was sent) were each caught, then reverted.
+
+**NOT run / NOT verified:** `MessengerComms` and the screen card on any device or emulator: the certificate check before binding, the bind to droidcommand-AI's service, the `sendingUid` check on the reply, the timeouts, and the dialog were compiled only. Whether a real droidcommand-AI answers this client is untested (its side is covered by its own tests). No bot or job flow calls the client yet.
+
 ## 0.1.0 history (kept)
 
 
