@@ -10,7 +10,7 @@ import java.util.List;
  * foreign_key_check afterwards.
  */
 public final class Migrations {
-  public static final int VERSION = 4;
+  public static final int VERSION = 5;
 
   /** The schema shipped in VictorBots 0.1.0 (database version 1), unchanged. */
   public static List<String> v1() {
@@ -196,6 +196,17 @@ public final class Migrations {
     return s;
   }
 
+  /**
+   * 0.5.0: per-chat provider switch. Purely additive: one nullable column, so every existing chat
+   * keeps inheriting its bot's provider (NULL = inherit). Holds a local profile id only; deleting a
+   * profile clears it ({@link Profiles#delete}) and a dangling id is ignored ({@link ChatProvider#chosen}).
+   */
+  public static List<String> v5() {
+    List<String> s = new ArrayList<>();
+    s.add("ALTER TABLE chats ADD COLUMN profile INTEGER");
+    return s;
+  }
+
   public static void run(Db db, List<String> sql) {
     for (String s : sql) db.exec(s);
   }
@@ -206,6 +217,7 @@ public final class Migrations {
     if (from < 2) run(db, v2());
     if (from < 3) run(db, v3());
     if (from < 4) run(db, v4());
+    if (from < 5) run(db, v5());
   }
 
   private Migrations() {}

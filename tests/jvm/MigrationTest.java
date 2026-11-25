@@ -58,7 +58,7 @@ public final class MigrationTest {
     JdbcDb up = new JdbcDb("jdbc:sqlite::memory:");
     up.exec("PRAGMA foreign_keys=OFF");
     up.tx(() -> { Migrations.upgrade(up, 0); return null; });
-    T.eq("schema version", 4, Migrations.VERSION);
+    T.eq("schema version", 5, Migrations.VERSION);
     long ub = up.insert("INSERT INTO bots(name,description,instructions,avatar,uid) VALUES('B','d','i','x','u')");
     up.exec("INSERT INTO bot_connectors(bot,connector,profile,tools) VALUES(" + ub + ",'repo',1,'[\"read_text_file\"]')");
     T.eq("new connector rows default to auto=0", 0L, up.one("SELECT auto FROM bot_connectors").optLong("auto"));
@@ -70,6 +70,22 @@ public final class MigrationTest {
     v2db.exec("INSERT INTO bot_connectors(bot,connector,profile,tools) VALUES(" + vb + ",'repo',1,'[\"t\"]')");
     v2db.tx(() -> { Migrations.upgrade(v2db, 2); return null; });
     T.eq("a 0.2.0 connector row survives the upgrade, model use off", 0L, v2db.one("SELECT auto FROM bot_connectors WHERE connector='repo'").optLong("auto"));
+
+    // v5: a 0.4.0 chat survives the upgrade and inherits its bot's provider (profile NULL).
+    JdbcDb v4db = new JdbcDb("jdbc:sqlite::memory:");
+    v4db.exec("PRAGMA foreign_keys=OFF");
+    v4db.tx(() -> { Migrations.run(v4db, Migrations.v1()); Migrations.run(v4db, Migrations.v2()); Migrations.run(v4db, Migrations.v3()); Migrations.run(v4db, Migrations.v4()); return null; });
+    long b4 = v4db.insert("INSERT INTO bots(name,description,instructions,avatar,uid) VALUES('B','d','i','x','u4')");
+    long c4 = v4db.insert("INSERT INTO chats(bot,title,created,uid) VALUES(?,?,?,?)", b4, "Kept chat", 9L, "c4");
+    v4db.insert("INSERT INTO messages(chat,role,body,status,created) VALUES(?,?,?,?,?)", c4, "user", "hi", "done", 1L);
+    v4db.tx(() -> { Migrations.upgrade(v4db, 4); return null; });
+    v4db.exec("PRAGMA foreign_keys=ON");
+    T.eq("v4 chat preserved", "Kept chat", v4db.one("SELECT title t FROM chats WHERE id=?", c4).optString("t"));
+    T.eq("v4 messages preserved", 1L, v4db.count("SELECT COUNT(*) n FROM messages WHERE chat=?", c4));
+    T.eq("existing chat inherits (no pick)", true, v4db.one("SELECT profile p FROM chats WHERE id=?", c4).optString("p", "").isEmpty());
+    T.eq("v5 foreign_key_check clean", 0, v4db.rows("PRAGMA foreign_key_check").size());
+    T.check("fresh install has chats.profile", fresh.rows("PRAGMA table_info(chats)").stream().anyMatch(r -> r.optString("name").equals("profile")));
+    T.eq("upgrade and fresh install give chats the same columns", fresh.rows("PRAGMA table_info(chats)").size(), v4db.rows("PRAGMA table_info(chats)").size());
 
     // FTS4 is usable (memory search depends on it).
     fresh.insert("INSERT INTO memory_fts(docid,body) VALUES(?,?)", 1L, "prefers kotlin coroutines for android work");

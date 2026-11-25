@@ -205,6 +205,8 @@ Each is a *text-only* helper. None claims it can act on a device or a PC. None t
 
 **Planned:** small UX gaps only: a one-tap "use a different provider for this chat" that does not edit the bot, and clearer wording when a bot inherits the default. No schema change expected.
 
+**BUILT in the per-chat provider PR (not released, never run on a device):** `ChatProvider` and the chat header's **⇄** picker. It needed one additive column after all (`chats.profile`, schema v5) so the choice persists per chat. Policy tests are unchanged and `ChatProviderTest` checks that the switch never edits the bot.
+
 ### (b) DroidCommand bots choose a specific model — NOT possible today
 
 **Finding [Certain]** (read from `core-security/.../InboundEntryPoints.kt` and `CompanionAssistActivity.kt` in droidcommand-AI `main`, plus `DcaBridge.java` here):

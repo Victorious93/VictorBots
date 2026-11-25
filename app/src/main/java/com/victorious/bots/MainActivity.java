@@ -339,14 +339,17 @@ public final class MainActivity extends Activity implements Host {
       render();
       return;
     }
-    Gateway.Plan plan = app.gateway.plan(botId, 0, Policy.Purpose.CHAT, false, "");
+    Gateway.Plan plan = app.gateway.plan(botId, ChatProvider.route(app.db, chatId, botId), Policy.Purpose.CHAT, false, "");
+    ChatProvider.Effective eff = ChatProvider.effective(app.db, app.profiles, chatId, botId);
     LinearLayout head = ui.row();
     head.addView(ui.button("‹", () -> { botId = chatId = 0; editUserId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); }, false), new LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)));
     LinearLayout title = ui.column();
     title.setPadding(ui.dp(12), 0, ui.dp(8), 0);
     title.addView(ui.heading(bot.optString("name"), 18));
     title.addView(ui.text(plan.describe() + " · " + plan.mode.label, 11, plan.decision.allowed ? Ui.ACCENT : Ui.WARN));
+    title.addView(ui.text(eff.describe(), 10, eff.source == ChatProvider.Source.CHAT ? Ui.ACCENT : Ui.MUTED));
     head.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+    head.addView(ui.button("⇄", this::chatProviderMenu, false), new LinearLayout.LayoutParams(ui.dp(44), ui.dp(46)));
     head.addView(ui.button("⋮", this::botMenu, false), new LinearLayout.LayoutParams(ui.dp(44), ui.dp(46)));
     page.addView(head);
     ui.gap(page, 8);
@@ -565,20 +568,40 @@ public final class MainActivity extends Activity implements Host {
     });
   }
 
+  /** Per-chat provider switch: changes only this conversation, never the bot or the default. */
+  private void chatProviderMenu() {
+    final long c = chatId;
+    List<ChatProvider.Option> opts = ChatProvider.options(app.db, app.profiles, botId);
+    long cur = ChatProvider.chosen(app.db, c);
+    String[] labels = new String[opts.size()];
+    for (int i = 0; i < opts.size(); i++) labels[i] = (opts.get(i).id == cur ? "● " : "") + opts.get(i).label;
+    ui.choose("Provider for this chat only", labels, which -> {
+      try {
+        ChatProvider.set(app.db, app.profiles, c, opts.get(which).id);
+        Gateway.Plan p = app.gateway.plan(botId, ChatProvider.route(app.db, c, botId), Policy.Purpose.CHAT, false, "");
+        ui.toast(which == 0 ? "This chat now inherits the bot's provider." : "This chat now uses " + opts.get(which).label + (p.decision.allowed ? "." : ". Your policy still applies: " + p.decision.reason));
+        render();
+      } catch (Exception e) {
+        error(e);
+      }
+    });
+  }
+
   private void botMenu() {
-    ui.choose("Bot & conversations", new String[] {"New conversation", "Conversation history", "Edit bot (provider, model, policy)", "Memory for this bot", "Suggest memories from this chat", "Summarise older turns", "Change avatar image", "Delete this conversation", "Delete bot"}, which -> {
+    ui.choose("Bot & conversations", new String[] {"New conversation", "Conversation history", "Provider for this chat only", "Edit bot (provider, model, policy)", "Memory for this bot", "Suggest memories from this chat", "Summarise older turns", "Change avatar image", "Delete this conversation", "Delete bot"}, which -> {
       switch (which) {
         case 0: chatId = app.store.newChat(botId); editUserId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); break;
         case 1: chooseChat(); break;
-        case 2: editBot(botId); break;
-        case 3: long b = botId; botId = chatId = 0; go("More", "memory", b); break;
-        case 4: suggestMemories(); break;
-        case 5: summarise(); break;
-        case 6:
+        case 2: chatProviderMenu(); break;
+        case 3: editBot(botId); break;
+        case 4: long b = botId; botId = chatId = 0; go("More", "memory", b); break;
+        case 5: suggestMemories(); break;
+        case 6: summarise(); break;
+        case 7:
           imageBot = botId;
           startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE), IMAGE);
           break;
-        case 7: confirmDelete(false); break;
+        case 8: confirmDelete(false); break;
         default: confirmDelete(true);
       }
     });
@@ -720,7 +743,9 @@ public final class MainActivity extends Activity implements Host {
   }
 
   /** @param confirmedCloud true only when this exact request was confirmed in a dialog naming the destination */
-  private void doSend(String input, long profileOverride, boolean confirmedCloud, boolean askConfirm, ChatHistory.Replacement replace) {
+  private void doSend(String input, long requestedOverride, boolean confirmedCloud, boolean askConfirm, ChatHistory.Replacement replace) {
+    // An explicit one-off override (fallback retry) wins; otherwise this chat's own pick, if any.
+    final long profileOverride = requestedOverride != 0 ? requestedOverride : ChatProvider.route(app.db, chatId, botId);
     try {
       JSONObject bot = app.store.bot(botId);
       Skills.Expansion ex = Skills.expand(app.db, input, availableRequirements());

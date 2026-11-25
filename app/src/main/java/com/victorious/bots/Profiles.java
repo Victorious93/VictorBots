@@ -178,6 +178,7 @@ public final class Profiles {
     if (p.kind == Policy.Kind.DROIDCOMMAND) throw new IllegalArgumentException("The DroidCommand profile is built in.");
     db.tx(() -> {
       db.update("UPDATE bots SET profile=NULL,model='' WHERE profile=?", id);
+      db.update("UPDATE chats SET profile=NULL WHERE profile=?", id);
       db.update("DELETE FROM profiles WHERE id=?", id);
       return null;
     });

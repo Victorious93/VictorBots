@@ -92,6 +92,11 @@ Run:
 
 NOT run for this change: the instrumentation tests (`SmokeInstrumentation`; so the new Keystore pin-binding checks have **not** executed), Gradle. The new form (`ProvidersScreen.editVictorLinux`) was compiled but never rendered or clicked: layout, the preset form's rendering in the dialog (it uses only `Ui.BG`/`ACCENT`/`ACCENT2`, which `ThemeTest` scans), inline error display and the Detect button's UI thread hand-off are unverified. `/victor/capabilities` and VictorLinux's `/v1` + port 8080 conventions come from the task description; the real VictorLinux was not contacted. Pointing the PC runner at VictorLinux is **not supported** (see `docs/VICTORLINUX.md`).
 
+## Per-chat provider switch (schema v5) — 2026-11-25
+
+* Ran: `bash scripts/test-jvm.sh` with all 23 suites passing, including the new `ChatProviderTest` (43 checks) and the v4→v5 checks in `MigrationTest`. I also compiled every source under `app/src/main/java` with `javac` against `android-35/android.jar`, which succeeded.
+* Not run: a device or emulator, instrumentation tests, `assembleDebug` locally, or a live provider or DroidCommand reply. The ⇄ picker and the header wording were never seen on a screen.
+
 ## Communications agents (schema v4) — 2026-11-24
 
 **Run (this environment: JDK 21, `scripts/test-jvm.sh`, real SQLite via sqlite-jdbc):** full suite green, 0 failures, including `GatewayTest` (still no second model path).
