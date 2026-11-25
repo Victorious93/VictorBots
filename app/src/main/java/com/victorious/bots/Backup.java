@@ -14,7 +14,7 @@ public final class Backup {
   public static final String FORMAT = "Victorious Framework VictorBots";
   public static final int VERSION = 2;
   public static final int MAX_BYTES = 20 * 1024 * 1024;
-  static final int MAX_BOTS = 200, MAX_CHATS = 2000, MAX_MESSAGES = 100_000, MAX_MEMORIES = 5000, MAX_TASKS = 2000, MAX_SKILLS = 200, MAX_PROFILES = 50, MAX_ROUTINES = 200, MAX_BODY = 200_000;
+  static final int MAX_BOTS = 200, MAX_CHATS = 2000, MAX_MESSAGES = 100_000, MAX_MEMORIES = 5000, MAX_TASKS = 2000, MAX_SKILLS = 200, MAX_PROFILES = 50, MAX_ROUTINES = 200, MAX_STYLE_PROFILES = 50, MAX_COMM_BOTS = 200, MAX_BODY = 200_000;
 
   public enum OnConflict { SKIP, KEEP_BOTH }
 
@@ -97,7 +97,27 @@ public final class Backup {
     JSONArray routines = new JSONArray();
     for (JSONObject r : db.rows("SELECT * FROM routines ORDER BY id")) routines.put(new JSONObject().put("uid", r.optString("uid")).put("name", r.optString("name")).put("bot_uid", botUid.get(r.optLong("bot"))).put("target", r.optString("target")).put("instruction", r.optString("instruction")).put("tool", r.optString("tool")).put("args", r.optString("args")).put("tz", r.optString("tz")).put("schedule", r.optString("schedule")).put("overlap", r.optString("overlap")).put("missed", r.optString("missed")));
     out.put("routines", routines);
-    out.put("excluded", new JSONArray(new String[] {"API keys and tokens", "avatar images", "job logs and artifacts", "usage ledger", "owner policy and default provider"}));
+    // Communications (schema v4): writing-style profiles and communication-bot settings. Contacts, conversation assignments
+    // and the activity log stay on the phone.
+    JSONArray styles = new JSONArray();
+    StyleProfiles sp = new StyleProfiles(db);
+    for (JSONObject r : db.rows("SELECT id,uid FROM style_profiles ORDER BY id")) {
+      JSONObject o = new JSONObject(sp.export(r.optLong("id")));
+      o.put("uid", r.optString("uid"));
+      styles.put(o);
+    }
+    out.put("style_profiles", styles);
+    JSONArray cbots = new JSONArray();
+    for (JSONObject c : db.rows("SELECT * FROM comm_bots ORDER BY bot")) {
+      String bu = botUid.get(c.optLong("bot"));
+      if (bu == null) continue;
+      cbots.put(new JSONObject().put("bot_uid", bu).put("mode", c.optString("mode")).put("profile_uid", c.optString("profile_uid")).put("hours_start", c.optLong("hours_start", -1))
+          .put("hours_end", c.optLong("hours_end", -1)).put("max_per_hour", c.optLong("max_per_hour", 4)).put("paused", c.optLong("paused")).put("disclose", c.optLong("disclose", 1))
+          .put("voice_needs_approval", c.optLong("voice_needs_approval", 1)));
+    }
+    out.put("comm_bots", cbots);
+    out.put("excluded", new JSONArray(new String[] {"API keys and tokens", "avatar images", "job logs and artifacts", "usage ledger", "owner policy and default provider",
+        "contacts of style profiles and communication bots", "conversation assignments", "communications activity log"}));
     return out;
   }
 
@@ -375,6 +395,58 @@ public final class Backup {
       if (write) db.insert("INSERT INTO routines(uid,name,bot,target,instruction,tool,args,tz,schedule,enabled,overlap,missed,created) VALUES(?,?,?,?,?,?,?,?,?,0,?,?,?)", uidOk(uid) ? uid : Ids.uid(), name, bot, target, instr, tool, args.isEmpty() ? "{}" : args, tz, sched, o.optString("overlap").equals("queue") ? "queue" : "skip", o.optString("missed").equals("run_once") ? "run_once" : "skip", now);
     }
     if (!routines.isNull(0) && routines.length() > 0) p.warnings.add("Imported routines are switched off. Review and enable them yourself.");
+
+    // Writing-style profiles: the same checks as importing a profile file. A profile with a local name already present is kept as it is.
+    Map<String, String> styleUid = new HashMap<>();
+    StyleProfiles sp = new StyleProfiles(db);
+    JSONArray styles = arr(root, "style_profiles", MAX_STYLE_PROFILES, e);
+    for (int i = 0; i < styles.length(); i++) {
+      JSONObject o = styles.optJSONObject(i);
+      String w = "style profile #" + (i + 1);
+      if (o == null) { e.add(w + ": not an object"); continue; }
+      String old = str(o, "uid", 40, false, e, w), name = str(o, "name", 80, true, e, w);
+      if (!e.isEmpty()) continue;
+      try { StyleProfiles.checkImport(o); } catch (IllegalArgumentException ex) { e.add(w + ": " + ex.getMessage()); continue; }
+      JSONObject local = db.one("SELECT uid FROM style_profiles WHERE name=?", name);
+      if (local != null) { p.c("style profiles")[1]++; if (!old.isEmpty()) styleUid.put(old, local.optString("uid")); continue; }
+      p.c("style profiles")[0]++;
+      if (write) {
+        try {
+          long id = sp.importProfile(o.toString());
+          if (!old.isEmpty()) styleUid.put(old, sp.get(id).optString("uid"));
+        } catch (IllegalArgumentException ex) { e.add(w + ": " + ex.getMessage()); }
+      }
+    }
+
+    // Communication-bot settings. Unattended modes come back as Approval, like routines come back switched off.
+    CommsBots cb = new CommsBots(db);
+    JSONArray cbots = arr(root, "comm_bots", MAX_COMM_BOTS, e);
+    boolean downgraded = false;
+    for (int i = 0; i < cbots.length(); i++) {
+      JSONObject o = cbots.optJSONObject(i);
+      String w = "communication bot #" + (i + 1);
+      if (o == null) { e.add(w + ": not an object"); continue; }
+      String bu = str(o, "bot_uid", 40, true, e, w), mode = str(o, "mode", 20, false, e, w), pu = str(o, "profile_uid", 40, false, e, w);
+      if (!e.isEmpty()) continue;
+      Long bot = botByUid.get(bu);
+      if (bot == null || (write && bot < 0)) { p.warnings.add("Communication settings refer to a bot that is not in the file; skipped."); continue; }
+      if (bot > 0 && db.count("SELECT COUNT(*) n FROM comm_bots WHERE bot=?", bot) > 0) { p.c("communication bots")[1]++; continue; }
+      CommsBots.Config c = new CommsBots.Config();
+      c.bot = bot;
+      c.mode = CommsBots.parseMode(mode);
+      if (c.mode == CommsBots.Mode.AUTO || c.mode == CommsBots.Mode.AUTONOMOUS || c.mode == CommsBots.Mode.AWAY) { c.mode = CommsBots.Mode.APPROVAL; downgraded = true; }
+      c.profileUid = styleUid.containsKey(pu) ? styleUid.get(pu) : "";
+      c.hoursStart = (int) o.optLong("hours_start", -1);
+      c.hoursEnd = (int) o.optLong("hours_end", -1);
+      c.maxPerHour = (int) o.optLong("max_per_hour", 4);
+      c.paused = o.optLong("paused") == 1;
+      c.disclose = o.optLong("disclose", 1) == 1;
+      c.voiceNeedsApproval = o.optLong("voice_needs_approval", 1) == 1;
+      try { CommsBots.validate(c); } catch (IllegalArgumentException ex) { e.add(w + ": " + ex.getMessage()); continue; }
+      p.c("communication bots")[0]++;
+      if (write) cb.save(c);
+    }
+    if (downgraded) p.warnings.add("Communication bots set to Auto, Autonomous or Away come back in Approval mode. Change them yourself if you want that again.");
   }
 
   private Backup() {}

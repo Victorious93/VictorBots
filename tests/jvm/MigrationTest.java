@@ -71,6 +71,40 @@ public final class MigrationTest {
     v2db.tx(() -> { Migrations.upgrade(v2db, 2); return null; });
     T.eq("a 0.2.0 connector row survives the upgrade, model use off", 0L, v2db.one("SELECT auto FROM bot_connectors WHERE connector='repo'").optLong("auto"));
 
+    // v4 (review F12): a populated 0.3.0 database upgrades with everything kept, gains the communications tables, and they cascade.
+    JdbcDb v3db = new JdbcDb("jdbc:sqlite::memory:");
+    v3db.exec("PRAGMA foreign_keys=OFF");
+    v3db.tx(() -> { Migrations.run(v3db, Migrations.v1()); Migrations.run(v3db, Migrations.v2()); Migrations.run(v3db, Migrations.v3()); return null; });
+    long b3 = v3db.insert("INSERT INTO bots(name,description,instructions,avatar,uid) VALUES('B3','d','keep me','x','u3')");
+    long c3 = v3db.insert("INSERT INTO chats(bot,title,created,uid) VALUES(?,?,?,?)", b3, "Chat 3", 3L, "c3");
+    v3db.insert("INSERT INTO messages(chat,role,body,status,created) VALUES(?,?,?,?,?)", c3, "user", "hello v3", "done", 1L);
+    v3db.insert("INSERT INTO tasks(title,body,status,created,uid) VALUES('T3','b','Draft',1,'t3')");
+    v3db.exec("INSERT INTO bot_connectors(bot,connector,profile,tools) VALUES(" + b3 + ",'repo',1,'[\"t\"]')");
+    v3db.tx(() -> { Migrations.upgrade(v3db, 3); return null; });
+    v3db.exec("PRAGMA foreign_keys=ON");
+    T.eq("v3->v4 bot kept", "keep me", v3db.one("SELECT instructions i FROM bots WHERE id=?", b3).optString("i"));
+    T.eq("v3->v4 chat kept", "Chat 3", v3db.one("SELECT title t FROM chats WHERE id=?", c3).optString("t"));
+    T.eq("v3->v4 message kept", "hello v3", v3db.one("SELECT body b FROM messages WHERE chat=?", c3).optString("b"));
+    T.eq("v3->v4 task kept", 1L, v3db.count("SELECT COUNT(*) n FROM tasks WHERE uid='t3'"));
+    T.eq("v3->v4 connector kept", 1L, v3db.count("SELECT COUNT(*) n FROM bot_connectors WHERE bot=?", b3));
+    String v4tables = "('style_profiles','style_versions','style_prefs','style_examples','comm_bots','comm_assign','comm_activity','comm_state')";
+    T.eq("v3->v4 adds the 8 communications tables", 8L, v3db.count("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN " + v4tables));
+    T.eq("v3->v4 adds the activity index", 1L, v3db.count("SELECT COUNT(*) n FROM sqlite_master WHERE type='index' AND name='comm_activity_bot'"));
+    T.eq("fresh install has the 8 communications tables", 8L, fresh.count("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN " + v4tables));
+    v3db.insert("INSERT INTO comm_bots(bot,updated) VALUES(?,1)", b3);
+    v3db.insert("INSERT INTO comm_assign(conversation,bot,created) VALUES('conv',?,1)", b3);
+    v3db.insert("INSERT INTO comm_activity(bot,kind,created) VALUES(?,'x',1)", b3);
+    T.eq("new comm bots default to Approval", "APPROVAL", v3db.one("SELECT mode m FROM comm_bots WHERE bot=?", b3).optString("m"));
+    long sp3 = v3db.insert("INSERT INTO style_profiles(uid,name,created,updated) VALUES('sp3','P',1,1)");
+    v3db.insert("INSERT INTO style_versions(profile,version,stats,created) VALUES(?,1,'{}',1)", sp3);
+    v3db.insert("INSERT INTO style_prefs(profile,kind,created) VALUES(?,'shorter',1)", sp3);
+    v3db.insert("INSERT INTO style_examples(profile,text,source,created) VALUES(?,'hey','saved',1)", sp3);
+    T.eq("v4 foreign_key_check clean", 0, v3db.rows("PRAGMA foreign_key_check").size());
+    v3db.update("DELETE FROM style_profiles WHERE id=?", sp3);
+    T.eq("style rows cascade from their profile", 0L, v3db.count("SELECT (SELECT COUNT(*) FROM style_versions)+(SELECT COUNT(*) FROM style_prefs)+(SELECT COUNT(*) FROM style_examples) n"));
+    v3db.update("DELETE FROM bots WHERE id=?", b3);
+    T.eq("comm rows cascade from their bot", 0L, v3db.count("SELECT (SELECT COUNT(*) FROM comm_bots)+(SELECT COUNT(*) FROM comm_assign)+(SELECT COUNT(*) FROM comm_activity) n"));
+
     // v5: a 0.4.0 chat survives the upgrade and inherits its bot's provider (profile NULL).
     JdbcDb v4db = new JdbcDb("jdbc:sqlite::memory:");
     v4db.exec("PRAGMA foreign_keys=OFF");
