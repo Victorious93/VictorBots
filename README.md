@@ -116,6 +116,14 @@ How-to: [MANUAL.md](MANUAL.md) (setup, security, backup and troubleshooting). Wh
 - Per-bot chat models, including a model choice for DroidCommand bots that needs a new contract in droidcommand-AI (today `COMPANION_ASSIST` cannot carry or list models).
 - Optional capability tiers (non-root default; Shizuku/ShizukuV and root only through DroidCommand, opt-in, with an OK for every action).
 
+## Victorious fleet
+
+VictorBots is part of the [Victorious Framework](https://victorious-framework.pages.dev), a family of Android and PC tools by Don Victor. **It works standalone; fleet integrations are optional.** Related: [droidcommand-AI](https://github.com/Victorious93/droidcommand-AI) (fleet controller, optional DroidCommand bots), [VictorLinux](https://github.com/Victorious93/VictorLinux) (optional PC provider preset), [victorsms](https://github.com/Victorious93/victorsms) (optional shared-conversation bridge). The full roster is in [victorious-fleet](https://github.com/Victorious93/victorious-fleet); live status is in [fleet-manifest](https://github.com/Victorious93/fleet-manifest).
+
+## Contributing
+
+Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md) first, keep changes focused, never commit secrets or release keys, and keep fleet integrations optional. Open a PR against `main` and wait for CI to pass.
+
 ## License
 
 No licence file is present and no redistribution licence has been chosen for the app source created for Victorious Framework. The Gradle wrapper retains its upstream notices.
