@@ -97,6 +97,11 @@ Run:
 
 NOT run for this change: the instrumentation tests (`SmokeInstrumentation`; so the new Keystore pin-binding checks have **not** executed), Gradle. The new form (`ProvidersScreen.editVictorLinux`) was compiled but never rendered or clicked: layout, the preset form's rendering in the dialog (it uses only `Ui.BG`/`ACCENT`/`ACCENT2`, which `ThemeTest` scans), inline error display and the Detect button's UI thread hand-off are unverified. `/victor/capabilities` and VictorLinux's `/v1` + port 8080 conventions come from the task description; the real VictorLinux was not contacted. Pointing the PC runner at VictorLinux is **not supported** (see `docs/VICTORLINUX.md`).
 
+## Per-bot folders and Share to… (no schema change) — 2026-11-25
+
+* Ran: `bash scripts/test-jvm.sh` (all suites, run in batches), including the new `BotFoldersTest` (85 checks: folder-safe names against traversal, separators, control and reserved names; grant states none/granted/revoked; export naming and content; backup export never containing the tree URI; source scans of `BotFolderAccess` for SAF-only, no reads, no deletes, grant check before writing, no model calls; manifest has no storage permission). Compiled every source under `app/src/main/java` with `javac` against `android-35/android.jar`.
+* Not run: a device or emulator, instrumentation tests, `assembleDebug` locally. The folder picker, the persisted grant, revoking it in Android settings, subfolder creation through a real documents provider, the share sheet and VictorFiles appearing as a target were **never exercised**. Whether VictorFiles can browse the chosen folder is unverified.
+
 ## Per-chat provider switch (schema v5) — 2026-11-25
 
 * Ran: `bash scripts/test-jvm.sh` with all 23 suites passing, including the new `ChatProviderTest` (43 checks) and the v4→v5 checks in `MigrationTest`. I also compiled every source under `app/src/main/java` with `javac` against `android-35/android.jar`, which succeeded.

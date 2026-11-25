@@ -176,7 +176,10 @@ Each is a *text-only* helper. None claims it can act on a device or a PC. None t
 
 **[Guessing]** the instruction texts themselves do not exist yet; they would be written new, reviewed by Don, and kept under whatever licence Don picks.
 
-## 7. Fleet apps: per-bot folders and safe intents — PLANNED
+## 7. Fleet apps: per-bot folders and safe intents — BUILT in the per-bot folders PR (not released, never run on a device)
+
+**Built [Certain]:** `BotFolders` (pure rules, `BotFoldersTest`) and `BotFolderAccess` (SAF): More → Bot folders, *Save to the bot folder* for messages and job artifacts, conversation export to the bot folder, and a text *Share to…* through the standard chooser. No schema change: the tree URI lives in app preferences, so backups cannot include it. Not built: sharing artifact files (would need a `FileProvider`; text only for now). The text below is the original plan.
+
 
 **Already in the app [Certain]:** attachments come from `ACTION_OPEN_DOCUMENT` with size and type limits; saving an artifact uses `ACTION_CREATE_DOCUMENT`; backups export through the document picker. There is no folder tree access and no per-bot folder today.
 
@@ -298,7 +301,7 @@ Each is its own PR. Items marked **[Don]** need his decision before work starts.
 | 5 | Pack install over HTTPS with the review screen; publish-as-PR browser hand-off | Tampered pack refused; nothing installs without the Install tap; no token stored | No (after 4) |
 | 6 | (droidcommand-AI) COMPANION_ASSIST `models` task and optional `model` / `model_used` | That repo's JVM tests incl. old-client compatibility; excluded apps still refused | **[Don]** contract |
 | 7 | VictorBots DroidCommand model picker with default fallback | Old DroidCommand → picker hidden; `model_used` shown | No (after 6) |
-| 8 | Per-bot SAF folders, folder-safe names, "Share to…" | Name-escape tests; revoked grant detected; backup excludes URIs | No |
+| 8 | Per-bot SAF folders, folder-safe names, "Share to…" — **built (not released)** | Name-escape tests; revoked grant detected; backup excludes URIs | No |
 | 9 | Widget and quick-ask (and optional tile) | Widget never sends; quick-ask obeys policy and confirmation | No |
 | 10 | Voice: system dictation and read-aloud, off by default | No speech API touched while off | Minor [Don] |
 | 11 | Routine templates and completion notifications | `RoutineAttachTest` green; templates start switched off | No |
