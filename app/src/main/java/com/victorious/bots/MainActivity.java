@@ -24,7 +24,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class MainActivity extends Activity implements Host {
-  static final int DCA = 40, EXPORT = 41, IMAGE = 42, ATTACH = 43, IMPORT = 44, DCA_EXEC = 45, SAVE_ARTIFACT = 46;
+  static final int DCA = 40, EXPORT = 41, IMAGE = 42, ATTACH = 43, IMPORT = 44, DCA_EXEC = 45, SAVE_ARTIFACT = 46, BOT_FOLDER = 47;
   private BotApp app;
   private Ui ui;
   private SharedPreferences prefs;
@@ -588,7 +588,7 @@ public final class MainActivity extends Activity implements Host {
   }
 
   private void botMenu() {
-    ui.choose("Bot & conversations", new String[] {"New conversation", "Conversation history", "Provider for this chat only", "Edit bot (provider, model, policy)", "Memory for this bot", "Suggest memories from this chat", "Summarise older turns", "Change avatar image", "Delete this conversation", "Delete bot"}, which -> {
+    ui.choose("Bot & conversations", new String[] {"New conversation", "Conversation history", "Provider for this chat only", "Edit bot (provider, model, policy)", "Memory for this bot", "Suggest memories from this chat", "Summarise older turns", "Export this conversation to the bot folder", "Share this conversation…", "Change avatar image", "Delete this conversation", "Delete bot"}, which -> {
       switch (which) {
         case 0: chatId = app.store.newChat(botId); editUserId = 0; draft = ""; pending.clear(); pendingMeta.clear(); render(); break;
         case 1: chooseChat(); break;
@@ -597,11 +597,13 @@ public final class MainActivity extends Activity implements Host {
         case 4: long b = botId; botId = chatId = 0; go("More", "memory", b); break;
         case 5: suggestMemories(); break;
         case 6: summarise(); break;
-        case 7:
+        case 7: exportChat(); break;
+        case 8: shareChat(); break;
+        case 9:
           imageBot = botId;
           startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE), IMAGE);
           break;
-        case 8: confirmDelete(false); break;
+        case 10: confirmDelete(false); break;
         default: confirmDelete(true);
       }
     });
@@ -669,7 +671,7 @@ public final class MainActivity extends Activity implements Host {
 
   private void messageMenu(JSONObject m) {
     String text = m.optString("body");
-    ui.choose("Use this message", new String[] {"Copy text", "Remember this (save as memory)", "Create task draft", "Create a job draft…", "Discuss with another bot"}, w -> {
+    ui.choose("Use this message", new String[] {"Copy text", "Remember this (save as memory)", "Create task draft", "Create a job draft…", "Discuss with another bot", "Save to the bot folder", "Share to…"}, w -> {
       if (w == 0) copy(text);
       else if (w == 1) {
         try {
@@ -682,6 +684,8 @@ public final class MainActivity extends Activity implements Host {
         app.store.task(text.substring(0, Math.min(80, text.length())), text);
         ui.toast("Task draft saved");
       } else if (w == 3) jobsScreen.newJob(botId, chatId, m.optLong("id"), text);
+      else if (w == 5) saveToBotFolder(botId, BotFolders.messageName(System.currentTimeMillis(), java.util.TimeZone.getDefault()), "text/markdown", text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      else if (w == 6) share("VictorBots message", text);
       else {
         List<JSONObject> bots = app.db.rows("SELECT * FROM bots WHERE id!=? ORDER BY id", botId);
         String[] names = new String[bots.size()];
@@ -907,6 +911,10 @@ public final class MainActivity extends Activity implements Host {
           saveAvatar(data.getData(), imageBot);
           ui.toast("Avatar updated");
         } else if (request == ATTACH) handleAttach(data);
+        else if (request == BOT_FOLDER && data.getData() != null) {
+          BotFolderAccess.accept(this, prefs, data.getData());
+          ui.toast("Bot folder chosen");
+        }
         else if (request == IMPORT && data.getData() != null) more.importChosen(readBounded(data.getData(), Backup.MAX_BYTES));
         else if (request == SAVE_ARTIFACT && data.getData() != null && artifactToSave != null) {
           try (OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt")) {
@@ -920,6 +928,63 @@ public final class MainActivity extends Activity implements Host {
       error(e);
     }
     render();
+  }
+
+  // ---------------------------------------------------------------- per-bot folders
+  /** Writes a new file into this bot's own folder, or explains why nothing was written. */
+  public void saveToBotFolder(long bot, String name, String mime, byte[] data) {
+    BotFolders.State s = BotFolderAccess.state(this, prefs);
+    if (s != BotFolders.State.OK) {
+      ui.confirm(s == BotFolders.State.REVOKED ? "Folder access was removed" : "No bot folder chosen", BotFolders.describe(s), "Open Bot folders", () -> go("More", "folders", 0));
+      return;
+    }
+    JSONObject b;
+    try {
+      b = app.store.bot(bot);
+    } catch (IllegalArgumentException e) {
+      ui.info("Not saved", "This file has no bot to save it under. Use Save a copy… instead.");
+      return;
+    }
+    final String botName = b.optString("name"), uid = b.optString("uid");
+    app.runAsync(() -> {
+      try {
+        String where = BotFolderAccess.write(this, prefs, botName, uid, name, mime, data);
+        runOnUiThread(() -> ui.toast("Saved to " + where));
+      } catch (Exception e) {
+        runOnUiThread(() -> ui.info("Not saved", String.valueOf(e.getMessage())));
+      }
+    });
+  }
+
+  private String chatMarkdown() {
+    String title = app.db.one("SELECT title t FROM chats WHERE id=?", chatId).optString("t");
+    List<ChatHistory.Msg> msgs = ChatHistory.from(app.db.rows("SELECT id,role,status,kind,body FROM messages WHERE chat=? ORDER BY id", chatId));
+    return BotFolders.chatExport(app.store.bot(botId).optString("name"), title, msgs, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+  }
+
+  private void exportChat() {
+    String title = app.db.one("SELECT title t FROM chats WHERE id=?", chatId).optString("t");
+    saveToBotFolder(botId, BotFolders.chatExportName(title, System.currentTimeMillis(), java.util.TimeZone.getDefault()), "text/markdown", chatMarkdown().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  private void shareChat() {
+    share("VictorBots conversation", chatMarkdown());
+  }
+
+  private void share(String subject, String text) {
+    try {
+      startActivity(BotFolderAccess.shareText(subject, text));
+    } catch (android.content.ActivityNotFoundException e) {
+      ui.info("Nothing to share to", "No app on this phone accepts shared text.");
+    }
+  }
+
+  void chooseBotFolder() {
+    try {
+      startActivityForResult(BotFolderAccess.picker(), BOT_FOLDER);
+    } catch (android.content.ActivityNotFoundException e) {
+      ui.info("No folder picker", "This phone has no system folder picker, so bot folders cannot be used.");
+    }
   }
 
   public void saveArtifactBytes(byte[] data, String name) {

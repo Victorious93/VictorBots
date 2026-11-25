@@ -351,7 +351,7 @@ final class JobsScreen {
           app.db.update("UPDATE artifacts SET verified=1,local_path=? WHERE id=?", "artifacts/" + j.id + "/" + name, a.optLong("id"));
         }
         final byte[] bytes = data;
-        h.act().runOnUiThread(() -> preview(a, bytes));
+        h.act().runOnUiThread(() -> preview(a, bytes, j.bot));
       } catch (Exception e) {
         h.act().runOnUiThread(() -> ui.info("Download failed", String.valueOf(e.getMessage())));
       }
@@ -359,7 +359,13 @@ final class JobsScreen {
   }
 
   /** Safe previews only: plain text in a TextView and a bounded bitmap. No WebView, no executing anything. */
-  private void preview(JSONObject a, byte[] data) {
+  /** The runner's reported type when it is a plain type/subtype, otherwise a generic binary type. */
+  static String mimeFor(JSONObject a) {
+    String m = a.optString("mime");
+    return m.matches("[a-z]+/[a-z0-9.+-]{1,80}") ? m : "application/octet-stream";
+  }
+
+  private void preview(JSONObject a, byte[] data, long bot) {
     String kind = a.optString("kind"), name = a.optString("remote_name");
     LinearLayout box = ui.column();
     box.setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8));
@@ -387,6 +393,7 @@ final class JobsScreen {
       box.addView(tv);
     }
     box.addView(ui.button("Save a copy…", () -> ((MainActivity) h.act()).saveArtifactBytes(data, name), false));
+    if (bot != 0) box.addView(ui.button("Save to the bot folder", () -> ((MainActivity) h.act()).saveToBotFolder(bot, name, mimeFor(a), data), false));
     ui.form(name, box, "Close", () -> true, null);
   }
 }

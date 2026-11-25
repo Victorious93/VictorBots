@@ -23,6 +23,8 @@ final class BotFolderAccess {
   private static final int RW = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
   /** Share sheet text is kept well under Binder transaction limits. */
   static final int MAX_SHARE_CHARS = 100_000;
+  /** Same bound as a verified job artifact download. */
+  static final int MAX_FILE_BYTES = 32 * 1024 * 1024;
 
   private BotFolderAccess() {}
 
@@ -103,8 +105,7 @@ final class BotFolderAccess {
    * clash, so an existing file is never overwritten.
    */
   static String write(Context c, SharedPreferences prefs, String botName, String botUid, String fileName, String mime, byte[] data) throws IOException {
-    if (data.length > BotFolders.MAX_WRITE_BYTES && !"application/octet-stream".equals(mime) && !mime.startsWith("image/"))
-      throw new IOException("This file is larger than the " + (BotFolders.MAX_WRITE_BYTES / 1048576) + " MB limit for text.");
+    if (data.length > MAX_FILE_BYTES) throw new IOException("This file is larger than the " + (MAX_FILE_BYTES / 1048576) + " MB limit.");
     Uri tree = requireGranted(c, prefs);
     String name = BotFolders.fileName(fileName, "victorbots-file.txt");
     if (!BotFolders.safeSegment(name)) throw new IOException("Unsafe file name.");
