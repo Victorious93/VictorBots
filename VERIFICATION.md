@@ -1,5 +1,10 @@
 # Victorious Framework — VictorBots verification
 
+## Communications review fixes — 2026-11-25
+
+* Run: `bash scripts/test-jvm.sh` (24 suites, 0 failed, incl. new CommsReviewFixTest, CommsGateTest, StyleReviewFixTest, CommsBotsReviewFixTest and the v3->v4 MigrationTest block); `scripts/build-sdk.sh` compiled the Android code locally (SDK platform 35).
+* **Not run:** `MessengerComms` (bind, unbind, disconnect) and the DroidCommand screen buttons on a device or emulator; any real droidcommand-AI or VictorSMS reply. The request-id rule for discovery follows droidcommand-AI's `Broker.kt` as read on 2026-11-25 (discovery replies carry no `request_id`).
+
 ## Release readiness — 2026-11-18
 
 Change on top of `main` 0e268d2: `scripts/build-sdk.sh` can sign with a production keystore (`VB_RELEASE_*` environment variables, output `VictorBots-0.2.0-release.apk`); new manual `.github/workflows/release.yml` builds with repository secrets, refuses an APK signed with the public debug key, and only creates a **draft** release.

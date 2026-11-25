@@ -34,10 +34,16 @@ public final class CommsCodec {
     if (nonce == null || !nonce.matches("[0-9a-f]{32}")) throw new IllegalArgumentException("Bad nonce.");
     if (capability == null || !capability.startsWith("communications.")) throw new IllegalArgumentException("Not a communications capability.");
     JSONObject a = new JSONObject();
-    if (args != null) for (Map.Entry<String, String> e : args.entrySet()) a.put(e.getKey(), e.getValue());
+    if (args != null)
+      for (Map.Entry<String, String> e : args.entrySet()) {
+        if (e.getKey() == null || e.getKey().isEmpty()) throw new IllegalArgumentException("An argument has no name.");
+        // JSONObject.put(name, null) silently removes the name; refuse instead of sending something other than asked.
+        if (e.getValue() == null) throw new IllegalArgumentException("Argument '" + e.getKey() + "' has no value.");
+        a.put(e.getKey(), e.getValue());
+      }
     JSONObject o = new JSONObject().put("v", MAX_VERSION).put("min_v", MIN_VERSION).put("task", "call").put("request_id", requestId).put("nonce", nonce)
         .put("ts", nowMs).put("expires_at", nowMs + TTL_MS).put("capability", capability).put("args", a)
-        .put("reason", reason == null ? "" : reason.substring(0, Math.min(200, reason.length())));
+        .put("reason", clip(reason, 200));
     if (botId != null || mode != null) {
       JSONObject actor = new JSONObject();
       if (botId != null) actor.put("bot_id", botId);
@@ -45,6 +51,22 @@ public final class CommsCodec {
       o.put("actor", actor);
     }
     return o.toString();
+  }
+
+  /** At most [max] UTF-16 units, never ending in half of a surrogate pair. */
+  public static String clip(String s, int max) {
+    if (s == null) return "";
+    if (s.length() <= max) return s;
+    int end = max;
+    if (end > 0 && Character.isHighSurrogate(s.charAt(end - 1))) end--;
+    return s.substring(0, end);
+  }
+
+  /** A string field, or "" when it is absent, JSON null or not a string (org.json would turn null into "null"). */
+  static String str(JSONObject o, String key) {
+    Object v = o.opt(key);
+    if (v == null || v == JSONObject.NULL) return "";
+    return v instanceof String ? (String) v : String.valueOf(v);
   }
 
   private static void checkId(String id) {
@@ -79,25 +101,39 @@ public final class CommsCodec {
     if (raw == null || raw.length() > 700_000) return r;
     try {
       JSONObject o = new JSONObject(raw);
-      if (o.optInt("v", -1) < 1 || !(o.opt("ok") instanceof Boolean)) return r;
+      Object vRaw = o.opt("v");
+      if (!(vRaw instanceof Number) || !(o.opt("ok") instanceof Boolean)) return r;
+      int ver = ((Number) vRaw).intValue();
+      if (ver < 1) return r;
       r.parsed = true;
-      r.ok = o.getBoolean("ok");
-      r.state = o.optString("state", "").toLowerCase(Locale.ROOT);
-      r.code = o.optString("code", "");
-      r.detail = Redact.snippet(o.optString("detail", ""), 300);
-      r.requestId = o.optString("request_id", "");
-      r.approvalId = o.optString("approval_id", "");
-      r.jobId = o.optString("job_id", "");
       JSONObject v = o.optJSONObject("versions");
       if (v != null) { r.minVersion = v.optInt("min", -1); r.maxVersion = v.optInt("max", -1); }
+      r.requestId = str(o, "request_id");
+      if (ver < MIN_VERSION || ver > MAX_VERSION) {
+        // A reply in a version this app does not speak is never read as if it were v1: it is a version mismatch.
+        r.ok = false;
+        r.state = "error";
+        r.code = "incompatible_version";
+        if (r.minVersion < 0) r.minVersion = ver;
+        if (r.maxVersion < 0) r.maxVersion = ver;
+        return r;
+      }
+      r.ok = o.getBoolean("ok");
+      r.state = str(o, "state").toLowerCase(Locale.ROOT);
+      r.code = str(o, "code");
+      r.detail = Redact.snippet(str(o, "detail"), 300);
+      r.approvalId = str(o, "approval_id");
+      r.jobId = str(o, "job_id");
       JSONObject res = o.optJSONObject("result");
       if (res != null) r.resultJson = Redact.text(res.toString());
       JSONArray caps = o.optJSONArray("capabilities");
       for (int i = 0; caps != null && i < caps.length(); i++) {
-        JSONObject c = caps.getJSONObject(i);
-        String id = c.optString("id");
+        JSONObject c = caps.optJSONObject(i);
+        if (c == null) continue; // one malformed entry does not discard the rest of the answer
+        String id = str(c, "id");
         if (id.isEmpty()) continue;
-        r.capabilities.put(id, "available".equals(c.optString("status")) ? "available" : c.optString("reason", "unavailable"));
+        String reason = str(c, "reason");
+        r.capabilities.put(id, "available".equals(str(c, "status")) ? "available" : reason.isEmpty() ? "unavailable" : reason);
       }
     } catch (JSONException e) {
       r.parsed = false;
@@ -133,7 +169,7 @@ public final class CommsCodec {
     switch (r.state) {
       case "completed": return r.ok ? Jobs.State.COMPLETED : null; // a contradictory reply is never a completion
       case "running": return r.ok ? Jobs.State.RUNNING : null;
-      case "pending_approval": return Jobs.State.AWAITING_APPROVAL;
+      case "pending_approval": return r.ok ? Jobs.State.AWAITING_APPROVAL : null;
       case "failed":
       case "refused": return Jobs.State.FAILED;
       case "unknown": return Jobs.State.UNKNOWN;
@@ -142,7 +178,9 @@ public final class CommsCodec {
   }
 
   /** Applies a reply through the same backend-report path as every other backend. Returns whether anything changed. */
-  public static boolean apply(Jobs jobs, long jobId, Reply r) {
+  public static boolean apply(Jobs jobs, long jobId, String expectedRequestId, Reply r) {
+    // A reply droidcommand-AI produced must name this job's request; outcomes this app decided itself (not_sent, no_reply) carry none.
+    if (r.transport.isEmpty() && (expectedRequestId == null || !expectedRequestId.equals(r.requestId))) return false;
     Jobs.State s = stateFor(r);
     if (s == null) return false;
     if (s == Jobs.State.DRAFT) {
@@ -159,7 +197,7 @@ public final class CommsCodec {
       return true;
     }
     Jobs.Remote remote = new Jobs.Remote();
-    remote.id = r.requestId.isEmpty() ? "comms" : r.requestId;
+    remote.id = expectedRequestId;
     remote.state = s == Jobs.State.AWAITING_APPROVAL ? "awaiting_approval" : s.name().toLowerCase(Locale.ROOT);
     remote.error = s == Jobs.State.FAILED ? (r.detail.isEmpty() ? r.code : r.detail) : "";
     if (s == Jobs.State.COMPLETED) remote.resultJson = r.resultJson.length() > 8000 ? "{}" : r.resultJson;
@@ -174,6 +212,10 @@ public final class CommsCodec {
     if (!r.parsed) return "droidcommand-AI sent a reply this app could not read. Nothing was changed.";
     if ("not_paired".equals(r.code)) return "droidcommand-AI has not allowed VictorBots yet. Open droidcommand-AI, go to Connected apps, and allow VictorBots. Nothing ran.\n" + r.detail;
     if (r.incompatible()) return "droidcommand-AI speaks messaging versions " + r.minVersion + " to " + r.maxVersion + "; this app speaks " + MIN_VERSION + " to " + MAX_VERSION + ". Update the older app.";
+    if ("pending_approval".equals(r.state) && r.ok)
+      return "Waiting for your approval in droidcommand-AI. Nothing has been done yet. Allow or deny it there, then tap the same button again to collect the answer.";
+    if ("running".equals(r.state) && r.ok)
+      return "droidcommand-AI accepted the request and is still working on it. Tap the same button again to check its outcome; it will not be sent twice.";
     if (!r.ok) return "droidcommand-AI refused (" + (r.code.isEmpty() ? r.state : r.code) + "): " + r.detail;
     if (r.capabilities.isEmpty()) return "droidcommand-AI answered: " + (r.state.isEmpty() ? "ok" : r.state) + ".";
     int up = 0;

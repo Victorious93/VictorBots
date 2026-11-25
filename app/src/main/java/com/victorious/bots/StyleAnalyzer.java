@@ -41,13 +41,23 @@ public final class StyleAnalyzer {
   private static final Pattern URL = Pattern.compile("(?i)(https?://|www\\.)\\S+");
   private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w-]+\\.[\\w.-]+");
   private static final Pattern DIGITS = Pattern.compile("\\d[\\d\\s().-]{5,}\\d");
+  /** A 4 to 6 digit code standing alone: PINs, one-time codes, card endings, street numbers. */
+  private static final Pattern CODE = Pattern.compile("(?<!\\d)\\d{4,6}(?!\\d)");
   private static final Pattern DOUBLE_PUNCT = Pattern.compile("[!?]{2,}");
   private static final int BURST_GAP_MS = 90_000;
+  /** At most this many messages are analysed (the most recent ones, by position in the input). */
+  public static final int MAX_MESSAGES = 2000;
+
+  /** True when [t] holds something that must never become an example: a link, an email address, a number run or a 4-6 digit code. */
+  public static boolean hasPrivateBits(String t) {
+    return URL.matcher(t).find() || EMAIL.matcher(t).find() || DIGITS.matcher(t).find() || CODE.matcher(t).find();
+  }
 
   public static Result analyze(List<Msg> in) {
     Result r = new Result();
     List<Msg> msgs = new ArrayList<>();
-    for (Msg m : in) if (!m.text.trim().isEmpty()) msgs.add(m);
+    for (Msg m : in) if (m != null && !m.text.trim().isEmpty()) msgs.add(m);
+    if (msgs.size() > MAX_MESSAGES) msgs = new ArrayList<>(msgs.subList(msgs.size() - MAX_MESSAGES, msgs.size()));
     int n = msgs.size();
     r.count = n;
     r.confidence = n < 30 ? "low" : n < 200 ? "medium" : "high";
@@ -105,9 +115,11 @@ public final class StyleAnalyzer {
           if (LAUGH.contains(tok)) laugh++;
           if (NO_APOS.contains(tok)) apoOmit++;
           if (WITH_APOS.contains(tok.replace('’', '\''))) apoWith++;
-          if (!STOP.contains(tok) && tok.length() > 2) uni.merge(tok, 1, Integer::sum);
-          if (k + 1 < w.size() && !(STOP.contains(tok) && STOP.contains(w.get(k + 1)))) bi.merge(tok + " " + w.get(k + 1), 1, Integer::sum);
-          if (k + 2 < w.size() && !STOP.contains(tok)) tri.merge(tok + " " + w.get(k + 1) + " " + w.get(k + 2), 1, Integer::sum);
+          // Words and phrases never keep a digit: no codes, numbers or number fragments end up in the statistics.
+          boolean d0 = hasDigit(tok), d1 = k + 1 < w.size() && hasDigit(w.get(k + 1)), d2 = k + 2 < w.size() && hasDigit(w.get(k + 2));
+          if (!d0 && !STOP.contains(tok) && tok.length() > 2) uni.merge(tok, 1, Integer::sum);
+          if (!d0 && !d1 && k + 1 < w.size() && !(STOP.contains(tok) && STOP.contains(w.get(k + 1)))) bi.merge(tok + " " + w.get(k + 1), 1, Integer::sum);
+          if (!d0 && !d1 && !d2 && k + 2 < w.size() && !STOP.contains(tok)) tri.merge(tok + " " + w.get(k + 1) + " " + w.get(k + 2), 1, Integer::sum);
         }
         if (!w.isEmpty() && GREET.contains(w.get(0))) greet.merge(w.get(0), 1, Integer::sum);
         if (!w.isEmpty() && SIGNOFF.contains(w.get(w.size() - 1))) sign.merge(w.get(w.size() - 1), 1, Integer::sum);
@@ -176,11 +188,12 @@ public final class StyleAnalyzer {
     final Map<String, Double> score = new HashMap<>();
     for (Msg m : msgs) {
       String t = m.text.trim();
-      if (t.length() > 200 || t.length() < 2 || URL.matcher(t).find() || EMAIL.matcher(t).find() || DIGITS.matcher(t).find()) continue;
+      if (t.length() > 200 || t.length() < 2 || hasPrivateBits(t)) continue;
       String low = t.toLowerCase(Locale.ROOT);
+      Set<String> words = new HashSet<>(Arrays.asList(SPLIT.split(low))); // split once per message, not once per slang word
       double sc = -Math.abs(t.length() - median) / Math.max(1, median);
       for (String p : phrases) if (low.contains(p)) sc += 1;
-      for (String sl : slang) if (Arrays.asList(SPLIT.split(low)).contains(sl)) sc += 0.5;
+      for (String sl : slang) if (words.contains(sl)) sc += 0.5;
       if (t.codePoints().anyMatch(StyleAnalyzer::isEmoji)) sc += 0.3;
       Double prev = score.get(t);
       if (prev == null || sc > prev) score.put(t, sc);
@@ -193,6 +206,11 @@ public final class StyleAnalyzer {
       }
     });
     return new ArrayList<>(keys.subList(0, Math.min(8, keys.size())));
+  }
+
+  static boolean hasDigit(String s) {
+    for (int i = 0; i < s.length(); i++) if (Character.isDigit(s.charAt(i))) return true;
+    return false;
   }
 
   static boolean isEmoji(int cp) {

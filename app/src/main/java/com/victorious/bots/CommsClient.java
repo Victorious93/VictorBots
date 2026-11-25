@@ -48,6 +48,19 @@ public final class CommsClient {
   /** Long enough for droidcommand-AI to ask a paired app a question first (its own bridge timeout is 10 s). */
   public static final long TIMEOUT_MS = 30_000;
 
+  /**
+   * One outstanding request per app: a second request while one is in flight is refused before anything is built or sent,
+   * whichever screen or client instance asks. Static on purpose, since every screen makes its own client.
+   */
+  private static final java.util.concurrent.atomic.AtomicBoolean IN_FLIGHT = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+  public static final String BUSY = "Another messaging request is still waiting for droidcommand-AI. Wait for it to finish.";
+
+  /** True while a request is outstanding (for disabling buttons; the gate itself is in {@link #run}). */
+  public static boolean busy() {
+    return IN_FLIGHT.get();
+  }
+
   private final Transport transport;
   private final Clock clock;
   private final SecureRandom random = new SecureRandom();
@@ -65,7 +78,8 @@ public final class CommsClient {
   public CommsCodec.Reply discover() {
     String id = newRequestId();
     try {
-      return run(id, CommsCodec.discover(id));
+      // droidcommand-AI's discovery answer carries no request_id (Broker.discoverObject), so none is required here.
+      return run(id, CommsCodec.discover(id), false);
     } catch (Exception e) {
       return CommsCodec.notSent("The request could not be built.");
     }
@@ -74,7 +88,7 @@ public final class CommsClient {
   /** The recorded outcome of an earlier request id. Read-only. */
   public CommsCodec.Reply receipt(String requestId) {
     try {
-      return run(requestId, CommsCodec.receipt(requestId));
+      return run(requestId, CommsCodec.receipt(requestId), true);
     } catch (Exception e) {
       return CommsCodec.notSent("The request could not be built.");
     }
@@ -89,10 +103,19 @@ public final class CommsClient {
       // Refused before anything was built or sent: a bad id, a bad capability name.
       return CommsCodec.notSent(e.getMessage());
     }
-    return run(requestId, json);
+    return run(requestId, json, true);
   }
 
-  private CommsCodec.Reply run(String expectedId, String json) {
+  private CommsCodec.Reply run(String expectedId, String json, boolean idRequired) {
+    if (!IN_FLIGHT.compareAndSet(false, true)) return CommsCodec.notSent(BUSY);
+    try {
+      return exchangeOnce(expectedId, json, idRequired);
+    } finally {
+      IN_FLIGHT.set(false);
+    }
+  }
+
+  private CommsCodec.Reply exchangeOnce(String expectedId, String json, boolean idRequired) {
     String raw;
     try {
       raw = transport.exchange(json, TIMEOUT_MS);
@@ -103,11 +126,21 @@ public final class CommsClient {
       return CommsCodec.noReply(e instanceof NoReplyException ? e.getMessage() : "The connection failed after the request was sent.");
     }
     CommsCodec.Reply r = CommsCodec.parse(raw);
-    if (r.parsed && !r.requestId.isEmpty() && !r.requestId.equals(expectedId)) {
-      // Someone else's answer is never applied to this request.
-      return new CommsCodec.Reply();
+    if (r.parsed && !belongsTo(r, expectedId, idRequired)) {
+      // Someone else's answer, or an answer that does not say which request it is for, is never applied to this request.
+      // The request was handed over, so its outcome is unknown, and it is not repeated.
+      return CommsCodec.noReply("droidcommand-AI answered without this request's id. The request was handed over and may have run; it was not repeated.");
     }
     return r;
+  }
+
+  /**
+   * A reply belongs to a request only when it names that request's id. The one exception is a protocol error that carries
+   * no id (droidcommand-AI omits it when it could not read one): ok=false and state "error" never justify any job state.
+   */
+  public static boolean belongsTo(CommsCodec.Reply r, String expectedId, boolean idRequired) {
+    if (r.requestId.isEmpty()) return !idRequired || (!r.ok && "error".equals(r.state));
+    return r.requestId.equals(expectedId);
   }
 
   String newRequestId() {

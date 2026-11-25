@@ -59,6 +59,7 @@ public final class MessengerComms implements CommsClient.Transport {
     final AtomicReference<Messenger> service = new AtomicReference<>();
     final AtomicReference<String> answer = new AtomicReference<>();
     final CountDownLatch bound = new CountDownLatch(1), answered = new CountDownLatch(1);
+    final java.util.concurrent.atomic.AtomicBoolean disconnected = new java.util.concurrent.atomic.AtomicBoolean(false);
     HandlerThread thread = new HandlerThread("vb-comms");
     thread.start();
     Messenger replies =
@@ -82,7 +83,12 @@ public final class MessengerComms implements CommsClient.Transport {
           }
 
           @Override
-          public void onServiceDisconnected(ComponentName name) {}
+          public void onServiceDisconnected(ComponentName name) {
+            // droidcommand-AI's process died: no answer can come any more, so stop waiting now (outcome unknown).
+            disconnected.set(true);
+            bound.countDown();
+            answered.countDown();
+          }
 
           @Override
           public void onNullBinding(ComponentName name) {
@@ -91,16 +97,20 @@ public final class MessengerComms implements CommsClient.Transport {
 
           @Override
           public void onBindingDied(ComponentName name) {
+            disconnected.set(true);
             bound.countDown();
+            answered.countDown();
           }
         };
-    boolean bindRequested = false;
+    // Android requires unbindService after ANY bindService call, even one that returned false, so track the call itself.
+    boolean bindCalled = false;
     try {
       // Everything up to the hand-over is "not sent": a failure here means the request never left this app.
       try {
         Intent intent = new Intent(CommsCodec.ACTION).setPackage(DcaBridge.PACKAGE);
-        bindRequested = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
-        if (!bindRequested) throw new CommsClient.NotSentException("droidcommand-AI has no messaging service. Update droidcommand-AI.");
+        bindCalled = true;
+        boolean bindAccepted = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
+        if (!bindAccepted) throw new CommsClient.NotSentException("droidcommand-AI has no messaging service. Update droidcommand-AI.");
         if (!bound.await(Math.min(timeoutMs, BIND_TIMEOUT_MS), TimeUnit.MILLISECONDS) || service.get() == null)
           throw new CommsClient.NotSentException("droidcommand-AI did not accept the messaging connection.");
       } catch (CommsClient.NotSentException e) {
@@ -129,10 +139,13 @@ public final class MessengerComms implements CommsClient.Transport {
         Thread.currentThread().interrupt();
         throw new CommsClient.NoReplyException("Interrupted while waiting. The request was handed over and may have run; it was not repeated.");
       }
+      if (answer.get() != null) return answer.get();
+      if (got && disconnected.get())
+        throw new CommsClient.NoReplyException("droidcommand-AI stopped before it answered. The request was handed over and may have run; it was not repeated.");
       if (!got) throw new CommsClient.NoReplyException("No reply within " + (timeoutMs / 1000) + " s. The request was handed over and may have run; it was not repeated.");
       return answer.get();
     } finally {
-      if (bindRequested) {
+      if (bindCalled) {
         try {
           context.unbindService(connection);
         } catch (RuntimeException ignored) {

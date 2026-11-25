@@ -525,27 +525,62 @@ final class MoreScreens {
     LinearLayout comms = ui.card(body);
     comms.addView(ui.text("Messaging (COMPANION_COMMS)", 14, Ui.ACCENT));
     comms.addView(ui.text("The unattended contract for texting tools. VictorBots only asks and shows the answer: allowing this app, every grant and every approval happen in DroidCommand. This check sends nothing to anyone; it asks DroidCommand what it can do right now.", 12, Ui.MUTED));
-    comms.addView(ui.button("Check messaging connection", () -> {
-      String trusted = prefs.getString("pin", DcaBridge.DEBUG_PIN);
-      new Thread(() -> {
-        CommsCodec.Reply r = new CommsClient(new MessengerComms(h.act(), trusted)).discover();
-        String text = CommsCodec.describe(r);
-        h.act().runOnUiThread(() -> ui.info("Messaging connection", text));
-      }).start();
-    }, false));
-    comms.addView(ui.button("List conversations shared with the assistant", () -> {
-      String trusted = prefs.getString("pin", DcaBridge.DEBUG_PIN);
-      new Thread(() -> {
-        CommsClient client = new CommsClient(new MessengerComms(h.act(), trusted));
-        java.util.Map<String, String> args = new java.util.LinkedHashMap<>();
-        args.put("limit", "10");
-        CommsCodec.Reply r = client.call(client.newRequestId(), "communications.list_conversations", args, null, null, "Owner check from the DroidCommand screen");
-        String text = CommsCodec.describeConversations(r);
-        h.act().runOnUiThread(() -> ui.info("Shared conversations", text));
-      }).start();
-    }, false));
+    String trustedPin = prefs.getString("pin", DcaBridge.DEBUG_PIN);
+    List<Button> commsButtons = new ArrayList<>();
+    commsButtons.add(ui.button("Check messaging connection", () ->
+        commsTask("Messaging connection", trustedPin, commsButtons, client -> CommsCodec.describe(client.discover())), false));
+    commsButtons.add(ui.button("List conversations shared with the assistant", () ->
+        commsTask("Shared conversations", trustedPin, commsButtons, client -> {
+          Map<String, String> args = new LinkedHashMap<>();
+          args.put("limit", "10");
+          return CommsCodec.describeConversations(LIST_FOLLOW_UP.ask(client, "communications.list_conversations", args, "Owner check from the DroidCommand screen"));
+        }), false));
+    for (Button b : commsButtons) {
+      b.setEnabled(!CommsClient.busy());
+      comms.addView(b);
+    }
     LinearLayout form = ui.card(body);
     EditText pin = ui.field(form, "Trusted DroidCommand certificate SHA-256", prefs.getString("pin", DcaBridge.DEBUG_PIN), true);
     form.addView(ui.button("Save pin", () -> { try { prefs.edit().putString("pin", Rules.pin(pin.getText().toString())).putBoolean("dca_verified", false).apply(); ui.toast("Pin saved"); h.refresh(); } catch (Exception e) { h.error(e); } }, true));
+  }
+
+  /** Re-sends the same request id after an approval, or asks for a receipt while running (comms review F11). */
+  private static final CommsFollowUp LIST_FOLLOW_UP = new CommsFollowUp();
+
+  interface CommsWork {
+    String run(CommsClient client);
+  }
+
+  /**
+   * One messaging request off the main thread (comms review F7/F8). Refused while another is outstanding; the buttons are
+   * disabled meanwhile; the answer is shown only if the screen that asked is still alive; any unexpected error is reported in
+   * words instead of killing the app.
+   */
+  private void commsTask(String title, String trustedPin, List<Button> buttons, CommsWork work) {
+    if (CommsClient.busy()) {
+      ui.toast(CommsClient.BUSY);
+      return;
+    }
+    final android.app.Activity act = h.act();
+    for (Button b : buttons) b.setEnabled(false);
+    ui.toast("Asking droidcommand-AI. This can take up to 40 seconds.");
+    new Thread(() -> {
+      String text;
+      try {
+        text = work.run(new CommsClient(new MessengerComms(act, trustedPin)));
+      } catch (Throwable t) {
+        text = "The messaging request stopped with an error (" + t.getClass().getSimpleName() + "). If it was sent it may have run; it was not repeated.";
+      }
+      final String shown = text;
+      act.runOnUiThread(() -> {
+        for (Button b : buttons) b.setEnabled(true);
+        if (act.isFinishing() || act.isDestroyed()) return;
+        try {
+          ui.info(title, shown);
+        } catch (RuntimeException ignored) {
+          // the window went away between the check and the dialog
+        }
+      });
+    }, "vb-comms-ui").start();
   }
 }

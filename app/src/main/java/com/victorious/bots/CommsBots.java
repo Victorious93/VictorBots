@@ -34,6 +34,9 @@ public final class CommsBots {
   }
 
   private static final String ALL_PAUSED = "all_paused";
+  /** The activity kind the hourly limit counts. */
+  public static final String SEND_REQUESTED = "send_requested";
+  static final int MAX_CONTACTS = 500, MAX_CONTACT = 80, MAX_ACTIVITY = 500;
   private final Db db;
 
   public CommsBots(Db db) {
@@ -53,6 +56,8 @@ public final class CommsBots {
     } catch (JSONException ignored) { }
     c.hoursStart = (int) r.optLong("hours_start", -1);
     c.hoursEnd = (int) r.optLong("hours_end", -1);
+    // A stored pair that save() would refuse reads as "no hours set", never as "always allowed by accident".
+    if (!hoursOk(c.hoursStart, c.hoursEnd)) { c.hoursStart = -1; c.hoursEnd = -1; }
     c.maxPerHour = (int) r.optLong("max_per_hour", 4);
     c.paused = r.optLong("paused") == 1;
     c.disclose = r.optLong("disclose", 1) == 1;
@@ -66,12 +71,32 @@ public final class CommsBots {
   }
 
   public void save(Config c) {
-    if (c.hoursStart != c.hoursEnd && (c.hoursStart < 0 || c.hoursEnd < 0 || c.hoursStart > 23 || c.hoursEnd > 23)) throw new IllegalArgumentException("Hours must be 0 to 23, or both unset.");
-    if (c.maxPerHour < 1 || c.maxPerHour > 60) throw new IllegalArgumentException("Replies per hour must be 1 to 60.");
-    JSONArray contacts = new JSONArray();
-    for (String s : c.contacts) if (contacts.length() < 500 && s.length() <= 80) contacts.put(s);
+    JSONArray contacts = validate(c);
     db.update("INSERT OR REPLACE INTO comm_bots(bot,mode,profile_uid,contacts,hours_start,hours_end,max_per_hour,paused,disclose,voice_needs_approval,updated) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         c.bot, c.mode.name(), c.profileUid == null ? "" : c.profileUid, contacts.toString(), c.hoursStart, c.hoursEnd, c.maxPerHour, c.paused, c.disclose, c.voiceNeedsApproval, System.currentTimeMillis());
+  }
+
+  /** Every rule save() applies, without writing. Returns the contacts as stored. */
+  public static JSONArray validate(Config c) {
+    if (c.mode == null) throw new IllegalArgumentException("Choose a mode.");
+    if (!hoursOk(c.hoursStart, c.hoursEnd))
+      throw new IllegalArgumentException("Hours must both be unset, or both be 0 to 23 and different from each other.");
+    if (c.maxPerHour < 1 || c.maxPerHour > 60) throw new IllegalArgumentException("Replies per hour must be 1 to 60.");
+    JSONArray contacts = new JSONArray();
+    List<String> in = c.contacts == null ? new ArrayList<String>() : c.contacts;
+    if (in.size() > MAX_CONTACTS) throw new IllegalArgumentException("A bot can have at most " + MAX_CONTACTS + " contacts.");
+    for (String s : in) {
+      if (s == null || s.trim().isEmpty()) throw new IllegalArgumentException("A contact entry is empty.");
+      if (s.length() > MAX_CONTACT) throw new IllegalArgumentException("A contact entry is longer than " + MAX_CONTACT + " characters.");
+      contacts.put(s);
+    }
+    return contacts;
+  }
+
+  /** Both unset (-1), or both 0 to 23 and different (equal hours would be ambiguous: all day or never). */
+  static boolean hoursOk(int start, int end) {
+    if (start == -1 && end == -1) return true;
+    return start >= 0 && start <= 23 && end >= 0 && end <= 23 && start != end;
   }
 
   // ---- one bot per conversation ----
@@ -130,21 +155,33 @@ public final class CommsBots {
     if (c.hoursStart >= 0) {
       int h = (int) (((nowMs / 60_000L + zoneOffsetMinutes) / 60) % 24);
       if (h < 0) h += 24;
-      boolean in = c.hoursStart == c.hoursEnd || (c.hoursStart < c.hoursEnd ? h >= c.hoursStart && h < c.hoursEnd : h >= c.hoursStart || h < c.hoursEnd);
+      boolean in = (c.hoursStart < c.hoursEnd ? h >= c.hoursStart && h < c.hoursEnd : h >= c.hoursStart || h < c.hoursEnd);
       if (!in) return new Decision(false, "Outside this bot's operating hours.");
     }
-    long recent = db.count("SELECT COUNT(*) n FROM comm_activity WHERE bot=? AND kind='send_requested' AND created>?", bot, nowMs - 3_600_000L);
+    long recent = db.count("SELECT COUNT(*) n FROM comm_activity WHERE bot=? AND kind=? AND created>?", bot, SEND_REQUESTED, nowMs - 3_600_000L);
     if (recent >= c.maxPerHour) return new Decision(false, "This bot reached its limit of " + c.maxPerHour + " requests per hour.");
     return new Decision(true, "");
   }
 
+  /**
+   * The check and the count in one transaction: when allowed, a {@link #SEND_REQUESTED} row is written before returning, so two
+   * callers can never both pass the hourly limit with the same last slot.
+   */
+  public Decision claimSend(long bot, long nowMs, int zoneOffsetMinutes, String detail) {
+    return db.tx(() -> {
+      Decision d = mayRequestSend(bot, nowMs, zoneOffsetMinutes);
+      if (d.allowed) logAt(bot, SEND_REQUESTED, detail, nowMs);
+      return d;
+    });
+  }
+
   public void log(long bot, String kind, String detail) {
-    db.insert("INSERT INTO comm_activity(bot,kind,detail,created) VALUES(?,?,?,?)", bot, kind, Redact.snippet(detail, 300), System.currentTimeMillis());
-    db.update("DELETE FROM comm_activity WHERE bot=? AND id NOT IN (SELECT id FROM comm_activity WHERE bot=? ORDER BY id DESC LIMIT 500)", bot, bot);
+    logAt(bot, kind, detail, System.currentTimeMillis());
   }
 
   public void logAt(long bot, String kind, String detail, long at) {
     db.insert("INSERT INTO comm_activity(bot,kind,detail,created) VALUES(?,?,?,?)", bot, kind, Redact.snippet(detail, 300), at);
+    db.update("DELETE FROM comm_activity WHERE bot=? AND id NOT IN (SELECT id FROM comm_activity WHERE bot=? ORDER BY id DESC LIMIT " + MAX_ACTIVITY + ")", bot, bot);
   }
 
   public List<JSONObject> activity(long bot, int limit) {
