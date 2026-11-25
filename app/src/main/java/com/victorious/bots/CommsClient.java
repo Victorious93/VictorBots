@@ -48,6 +48,19 @@ public final class CommsClient {
   /** Long enough for droidcommand-AI to ask a paired app a question first (its own bridge timeout is 10 s). */
   public static final long TIMEOUT_MS = 30_000;
 
+  /**
+   * One outstanding request per app: a second request while one is in flight is refused before anything is built or sent,
+   * whichever screen or client instance asks. Static on purpose, since every screen makes its own client.
+   */
+  private static final java.util.concurrent.atomic.AtomicBoolean IN_FLIGHT = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+  public static final String BUSY = "Another messaging request is still waiting for droidcommand-AI. Wait for it to finish.";
+
+  /** True while a request is outstanding (for disabling buttons; the gate itself is in {@link #run}). */
+  public static boolean busy() {
+    return IN_FLIGHT.get();
+  }
+
   private final Transport transport;
   private final Clock clock;
   private final SecureRandom random = new SecureRandom();
@@ -94,6 +107,15 @@ public final class CommsClient {
   }
 
   private CommsCodec.Reply run(String expectedId, String json, boolean idRequired) {
+    if (!IN_FLIGHT.compareAndSet(false, true)) return CommsCodec.notSent(BUSY);
+    try {
+      return exchangeOnce(expectedId, json, idRequired);
+    } finally {
+      IN_FLIGHT.set(false);
+    }
+  }
+
+  private CommsCodec.Reply exchangeOnce(String expectedId, String json, boolean idRequired) {
     String raw;
     try {
       raw = transport.exchange(json, TIMEOUT_MS);

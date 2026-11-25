@@ -212,6 +212,10 @@ public final class CommsCodec {
     if (!r.parsed) return "droidcommand-AI sent a reply this app could not read. Nothing was changed.";
     if ("not_paired".equals(r.code)) return "droidcommand-AI has not allowed VictorBots yet. Open droidcommand-AI, go to Connected apps, and allow VictorBots. Nothing ran.\n" + r.detail;
     if (r.incompatible()) return "droidcommand-AI speaks messaging versions " + r.minVersion + " to " + r.maxVersion + "; this app speaks " + MIN_VERSION + " to " + MAX_VERSION + ". Update the older app.";
+    if ("pending_approval".equals(r.state) && r.ok)
+      return "Waiting for your approval in droidcommand-AI. Nothing has been done yet. Allow or deny it there, then tap the same button again to collect the answer.";
+    if ("running".equals(r.state) && r.ok)
+      return "droidcommand-AI accepted the request and is still working on it. Tap the same button again to check its outcome; it will not be sent twice.";
     if (!r.ok) return "droidcommand-AI refused (" + (r.code.isEmpty() ? r.state : r.code) + "): " + r.detail;
     if (r.capabilities.isEmpty()) return "droidcommand-AI answered: " + (r.state.isEmpty() ? "ok" : r.state) + ".";
     int up = 0;
