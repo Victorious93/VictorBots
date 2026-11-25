@@ -117,7 +117,7 @@ public final class Backup {
     }
     out.put("comm_bots", cbots);
     out.put("excluded", new JSONArray(new String[] {"API keys and tokens", "avatar images", "job logs and artifacts", "usage ledger", "owner policy and default provider",
-        "contacts of style profiles and communication bots", "conversation assignments", "communications activity log"}));
+        "contacts of style profiles and communication bots", "conversation assignments", "communications activity log", "bot folder location (a local device grant)"}));
     return out;
   }
 

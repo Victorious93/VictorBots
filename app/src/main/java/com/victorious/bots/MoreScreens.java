@@ -39,6 +39,7 @@ final class MoreScreens {
       case "tasks": back(body); tasks(body); return;
       case "backup": back(body); backup(body); return;
       case "dca": back(body); dcaLink(body); return;
+      case "folders": back(body); folders(body); return;
       default: menu(body);
     }
   }
@@ -59,6 +60,7 @@ final class MoreScreens {
         {"connectors", "Connectors", "Read-only repository access through your PC runner."},
         {"tasks", "Task drafts", "Notes to yourself. Status here is manual."},
         {"backup", "Backup & restore", "Versioned export; restore with preview and conflict handling."},
+        {"folders", "Bot folders", "One folder you choose; each bot saves files and chat exports only in its own subfolder."},
         {"dca", "DroidCommand link", "Pairing, pinned certificate, text chat vs execution."},
     };
     for (String[] it : items) {
@@ -468,6 +470,34 @@ final class MoreScreens {
       c.addView(ui.button("Make this a job draft…", () -> ((MainActivity) h.act()).newJobFromTask(t.optString("title"), t.optString("body")), false));
       c.addView(ui.button("Change status", () -> ui.choose("Manual status", new String[] {"Draft", "In progress (manual)", "Done (manual)", "Cancelled (manual)"}, w -> { app.db.update("UPDATE tasks SET status=? WHERE id=?", new String[] {"Draft", "In progress (manual)", "Done (manual)", "Cancelled (manual)"}[w], t.optLong("id")); h.refresh(); }), false));
       c.addView(ui.button("Delete", () -> { app.db.update("DELETE FROM tasks WHERE id=?", t.optLong("id")); h.refresh(); }, false));
+    }
+  }
+
+  // ------------------------------------------------------------------ bot folders
+  private void folders(LinearLayout body) {
+    android.content.SharedPreferences prefs = h.act().getSharedPreferences("settings", 0);
+    BotFolders.State st = BotFolderAccess.state(h.act(), prefs);
+    body.addView(ui.text("BOT FOLDERS", 11, Ui.ACCENT));
+    body.addView(ui.heading("Where bots save files.", 28));
+    body.addView(ui.text("Choose one folder, for example Documents/VictorBots. Each bot gets its own subfolder named after it, and \"Save to the bot folder\" and conversation exports write new files only there. VictorBots never reads, changes or deletes files in it, and asks for no storage permission beyond this one folder. The location stays on this phone and is never part of a backup.", 13, Ui.MUTED));
+    LinearLayout c = ui.card(body);
+    c.addView(ui.heading(st == BotFolders.State.OK ? "Folder: " + BotFolderAccess.label(prefs) : st == BotFolders.State.REVOKED ? "Access removed" : "No folder chosen", 17));
+    c.addView(ui.text(BotFolders.describe(st), 12, st == BotFolders.State.REVOKED ? Ui.WARN : Ui.FG));
+    c.addView(ui.button(st == BotFolders.State.NONE ? "Choose folder…" : "Choose a different folder…", () -> ((MainActivity) h.act()).chooseBotFolder(), true));
+    if (st != BotFolders.State.NONE)
+      c.addView(ui.button("Forget this folder", () -> ui.confirm("Forget the bot folder?", "VictorBots gives back its access to this folder. Files already saved there stay where they are.", "Forget", () -> {
+        BotFolderAccess.forget(h.act(), prefs);
+        h.refresh();
+      }), false));
+    if (st == BotFolders.State.OK) {
+      List<JSONObject> bots = app.db.rows("SELECT name,uid FROM bots ORDER BY id");
+      if (!bots.isEmpty()) {
+        LinearLayout list = ui.card(body);
+        list.addView(ui.heading("Subfolders", 17));
+        StringBuilder b = new StringBuilder();
+        for (JSONObject r : bots) b.append(r.optString("name")).append(" → ").append(BotFolders.folderName(r.optString("name"), r.optString("uid"))).append('\n');
+        list.addView(ui.text(b.toString().trim() + "\n\nA subfolder is created the first time that bot saves something.", 12, Ui.MUTED));
+      }
     }
   }
 
