@@ -117,7 +117,7 @@ public final class StyleTest {
     sp.prefer(p, "sounds good");
     JSONObject g = sp.guidance(p);
     T.check("avoid list passed on", g.getJSONArray("avoid").toString().contains("per my last message"));
-    T.check("prefer phrase passed on", g.getString("guidance").contains("Likes to say: sounds good"));
+    T.check("prefer phrase passed on", g.getString("guidance").contains("Likes to say: \"sounds good\""));
     T.throwsIae("empty expression refused", () -> sp.avoid(p, "  "));
     T.check("examples capped at 10 and short", g.getJSONArray("examples").length() <= 10 && g.getJSONArray("examples").toString().length() < 4000);
     T.check("approved examples come first", g.getJSONArray("examples").getString(0).equals("sounds good thx"));
