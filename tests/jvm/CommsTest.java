@@ -125,7 +125,7 @@ public final class CommsTest {
     List<String> fresh = tables(v3), up = tables(old);
     T.eq("upgrade and fresh install produce the same tables", fresh, up);
     for (String t : new String[] {"style_profiles", "style_versions", "style_prefs", "style_examples", "comm_bots", "comm_assign", "comm_activity", "comm_state"}) T.check("table " + t, up.contains(t));
-    T.eq("schema version", 4, Migrations.VERSION);
+    T.eq("schema version", 5, Migrations.VERSION);
     T.done();
   }
 
