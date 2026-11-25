@@ -88,7 +88,7 @@ public final class CommsClientTest {
     bad.reply = "{\"v\":1,\"ok\":true,\"state\":\"completed\",\"request_id\":\"someone-elses-request\",\"result\":{}}";
     CommsCodec.Reply foreign = cb.call(RID, "communications.send_sms", args, null, null, "");
     T.eq("another request's answer is discarded", false, foreign.parsed);
-    T.eq("and justifies no state", null, CommsCodec.stateFor(foreign));
+    T.eq("and the handed-over request is an unknown outcome, never a completion", Jobs.State.UNKNOWN, CommsCodec.stateFor(foreign));
     bad.reply = null;
     T.eq("no text at all is not an answer", false, cb.call(RID, "communications.send_sms", args, null, null, "").parsed);
 
@@ -123,18 +123,18 @@ public final class CommsClientTest {
     Jobs jobs = new Jobs(e.db);
     long j = jobs.create("Text John", e.bot, 0, 0, "DCA", e.dca, "communications.send_sms", new JSONObject(), 0, 0);
     jobs.markSubmitting(j);
-    T.eq("nothing left the app: back to a draft", true, CommsCodec.apply(jobs, j, ns));
+    T.eq("nothing left the app: back to a draft", true, CommsCodec.apply(jobs, j, RID, ns));
     T.eq("the job is a draft again", Jobs.State.DRAFT, jobs.get(j).state);
     long k = jobs.create("Text Sam", e.bot, 0, 0, "DCA", e.dca, "communications.send_sms", new JSONObject(), 0, 0);
     jobs.markSubmitting(k);
-    T.eq("no reply: recorded as unknown", true, CommsCodec.apply(jobs, k, nr));
+    T.eq("no reply: recorded as unknown", true, CommsCodec.apply(jobs, k, RID, nr));
     T.eq("outcome unknown", Jobs.State.UNKNOWN, jobs.get(k).state);
-    T.eq("an unknown job is never re-sent", false, CommsCodec.apply(jobs, k, nr));
+    T.eq("an unknown job is never re-sent", false, CommsCodec.apply(jobs, k, RID, nr));
     long m = jobs.create("Text Ann", e.bot, 0, 0, "DCA", e.dca, "communications.send_sms", new JSONObject(), 0, 0);
-    T.eq("a draft that was never sent is not 'sent back' to a draft", false, CommsCodec.apply(jobs, m, ns));
+    T.eq("a draft that was never sent is not 'sent back' to a draft", false, CommsCodec.apply(jobs, m, RID, ns));
     jobs.markSubmitting(m);
-    CommsCodec.apply(jobs, m, CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"result\":{}}"));
-    T.eq("a completed job is not pulled back by a late not-sent report", false, CommsCodec.apply(jobs, m, ns));
+    CommsCodec.apply(jobs, m, RID, CommsCodec.parse("{\"v\":1,\"request_id\":\"" + RID + "\",\"ok\":true,\"state\":\"completed\",\"result\":{}}"));
+    T.eq("a completed job is not pulled back by a late not-sent report", false, CommsCodec.apply(jobs, m, RID, ns));
     T.eq("it stays completed", Jobs.State.COMPLETED, jobs.get(m).state);
     T.done();
   }

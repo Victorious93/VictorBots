@@ -65,7 +65,8 @@ public final class CommsClient {
   public CommsCodec.Reply discover() {
     String id = newRequestId();
     try {
-      return run(id, CommsCodec.discover(id));
+      // droidcommand-AI's discovery answer carries no request_id (Broker.discoverObject), so none is required here.
+      return run(id, CommsCodec.discover(id), false);
     } catch (Exception e) {
       return CommsCodec.notSent("The request could not be built.");
     }
@@ -74,7 +75,7 @@ public final class CommsClient {
   /** The recorded outcome of an earlier request id. Read-only. */
   public CommsCodec.Reply receipt(String requestId) {
     try {
-      return run(requestId, CommsCodec.receipt(requestId));
+      return run(requestId, CommsCodec.receipt(requestId), true);
     } catch (Exception e) {
       return CommsCodec.notSent("The request could not be built.");
     }
@@ -89,10 +90,10 @@ public final class CommsClient {
       // Refused before anything was built or sent: a bad id, a bad capability name.
       return CommsCodec.notSent(e.getMessage());
     }
-    return run(requestId, json);
+    return run(requestId, json, true);
   }
 
-  private CommsCodec.Reply run(String expectedId, String json) {
+  private CommsCodec.Reply run(String expectedId, String json, boolean idRequired) {
     String raw;
     try {
       raw = transport.exchange(json, TIMEOUT_MS);
@@ -103,11 +104,21 @@ public final class CommsClient {
       return CommsCodec.noReply(e instanceof NoReplyException ? e.getMessage() : "The connection failed after the request was sent.");
     }
     CommsCodec.Reply r = CommsCodec.parse(raw);
-    if (r.parsed && !r.requestId.isEmpty() && !r.requestId.equals(expectedId)) {
-      // Someone else's answer is never applied to this request.
-      return new CommsCodec.Reply();
+    if (r.parsed && !belongsTo(r, expectedId, idRequired)) {
+      // Someone else's answer, or an answer that does not say which request it is for, is never applied to this request.
+      // The request was handed over, so its outcome is unknown, and it is not repeated.
+      return CommsCodec.noReply("droidcommand-AI answered without this request's id. The request was handed over and may have run; it was not repeated.");
     }
     return r;
+  }
+
+  /**
+   * A reply belongs to a request only when it names that request's id. The one exception is a protocol error that carries
+   * no id (droidcommand-AI omits it when it could not read one): ok=false and state "error" never justify any job state.
+   */
+  public static boolean belongsTo(CommsCodec.Reply r, String expectedId, boolean idRequired) {
+    if (r.requestId.isEmpty()) return !idRequired || (!r.ok && "error".equals(r.state));
+    return r.requestId.equals(expectedId);
   }
 
   String newRequestId() {

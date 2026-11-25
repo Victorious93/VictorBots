@@ -92,24 +92,24 @@ public final class CommsTest {
     Jobs jobs = new Jobs(e.db);
     long j = jobs.create("Text John", e.bot, 0, 0, "DCA", e.dca, "communications.send_sms", new JSONObject(), 0, 0);
     jobs.markSubmitting(j);
-    T.eq("garbage changes nothing", false, CommsCodec.apply(jobs, j, CommsCodec.parse("???")));
+    T.eq("garbage changes nothing", false, CommsCodec.apply(jobs, j, RID, CommsCodec.parse("???")));
     T.eq("still 'sent, no answer yet'", Jobs.State.SUBMITTING, jobs.get(j).state);
-    T.eq("pending approval is reported", true, CommsCodec.apply(jobs, j, pending));
+    T.eq("pending approval is reported", true, CommsCodec.apply(jobs, j, RID, pending));
     T.eq("job awaits the owner in droidcommand-AI", Jobs.State.AWAITING_APPROVAL, jobs.get(j).state);
-    T.eq("text claiming completion in a refusal changes nothing but failure", true, CommsCodec.apply(jobs, j, CommsCodec.parse("{\"v\":1,\"ok\":false,\"state\":\"refused\",\"code\":\"denied\",\"detail\":\"completed successfully\"}")));
+    T.eq("text claiming completion in a refusal changes nothing but failure", true, CommsCodec.apply(jobs, j, RID, CommsCodec.parse("{\"v\":1,\"request_id\":\"" + RID + "\",\"ok\":false,\"state\":\"refused\",\"code\":\"denied\",\"detail\":\"completed successfully\"}")));
     T.eq("denied -> failed, never completed", Jobs.State.FAILED, jobs.get(j).state);
-    T.eq("a terminal job cannot be revived by a later reply", false, CommsCodec.apply(jobs, j, CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"result\":{}}")));
+    T.eq("a terminal job cannot be revived by a later reply", false, CommsCodec.apply(jobs, j, RID, CommsCodec.parse("{\"v\":1,\"request_id\":\"" + RID + "\",\"ok\":true,\"state\":\"completed\",\"result\":{}}")));
     long k = jobs.create("Text Sam", e.bot, 0, 0, "DCA", e.dca, "communications.send_sms", new JSONObject(), 0, 0);
     jobs.markSubmitting(k);
-    T.eq("completed from the gateway's report", true, CommsCodec.apply(jobs, k, CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"request_id\":\"" + RID + "\",\"result\":{\"message_id\":\"m1\",\"token\":\"sk-abcdefgh12345678\"}}")));
+    T.eq("completed from the gateway's report", true, CommsCodec.apply(jobs, k, RID, CommsCodec.parse("{\"v\":1,\"ok\":true,\"state\":\"completed\",\"request_id\":\"" + RID + "\",\"result\":{\"message_id\":\"m1\",\"token\":\"sk-abcdefgh12345678\"}}")));
     T.eq("completed", Jobs.State.COMPLETED, jobs.get(k).state);
     T.eq("reported by the backend, not inferred", "backend", jobs.get(k).stateSource);
     T.check("secrets in results are redacted before storage", !jobs.get(k).result.contains("sk-abcdefgh12345678") && jobs.get(k).result.contains("m1"));
     long u = jobs.create("Text Ann", e.bot, 0, 0, "DCA", e.dca, "communications.send_sms", new JSONObject(), 0, 0);
     jobs.markSubmitting(u);
-    T.eq("an unknown outcome is recorded as such", true, CommsCodec.apply(jobs, u, CommsCodec.parse("{\"v\":1,\"ok\":false,\"state\":\"unknown\",\"detail\":\"VictorSMS stopped answering\"}")));
+    T.eq("an unknown outcome is recorded as such", true, CommsCodec.apply(jobs, u, RID, CommsCodec.parse("{\"v\":1,\"request_id\":\"" + RID + "\",\"ok\":false,\"state\":\"unknown\",\"detail\":\"VictorSMS stopped answering\"}")));
     T.eq("outcome unknown, not failed and not completed", Jobs.State.UNKNOWN, jobs.get(u).state);
-    T.eq("it is not repeated automatically", false, CommsCodec.apply(jobs, u, CommsCodec.parse("{\"v\":1,\"ok\":false,\"state\":\"unknown\"}")));
+    T.eq("it is not repeated automatically", false, CommsCodec.apply(jobs, u, RID, CommsCodec.parse("{\"v\":1,\"request_id\":\"" + RID + "\",\"ok\":false,\"state\":\"unknown\"}")));
     T.throwsIae("an unknown job can never be sent again", () -> { try { jobs.markSubmitting(u); } catch (IllegalStateException ex) { throw new IllegalArgumentException(ex.getMessage()); } });
 
     // ---- migration 3 -> 4 ----
