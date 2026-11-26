@@ -46,5 +46,27 @@ A new token: `printf '%s' "$TOKEN" | python3 victorbots_runner.py --hash-token` 
 ## API (protocol 1, all under `/runner/v1`)
 `GET /capabilities` · `POST /jobs` `{request_id, workspace, tool, args, title}` (idempotent by `request_id`; 202 new, 200 duplicate) · `GET /jobs?request_id=` · `GET /jobs/{id}` · `GET /jobs/{id}/events?after=N` · `POST /jobs/{id}/cancel` · `POST /jobs/{id}/approve {decision}` · `GET /jobs/{id}/artifacts/{name}` (`X-Content-SHA256`) · `GET /connectors` · `POST /connectors/{id}/call` · `PUT|DELETE /routines/{uid}` · `GET /routines/{uid}/runs`.
 
+## Optional Victorious-ComfyUI image preset
+
+The bundled `comfyui_preset.py` can be invoked as an owner-defined PC runner command. It supports one image from an installed SD 1.5/SDXL all-in-one checkpoint. It is disabled until the owner adds a named command; the phone cannot send arbitrary graphs, model names, prompts, paths or URLs. Keep ComfyUI on the same PC at `127.0.0.1:8188`, running a compatible Victorious-ComfyUI build with `python main.py --offline --listen 127.0.0.1 --port 8188`. Do not expose the raw ComfyUI API over LAN or the internet.
+
+Copy the helper to an owner-controlled, readable path outside phone-writable workspaces. Configure a dedicated writable, lock-isolated workspace (for example `/var/lib/victorbots-runner/media`), accessible to the runner service account, and a command like this in the existing `commands` mapping. Replace the script path and checkpoint name with your actual values:
+
+```json
+"comfyui-preset": {
+  "argv": ["/usr/bin/python3", "/opt/victorbots-runner/comfyui_preset.py", "--checkpoint", "YOUR_INSTALLED_CHECKPOINT.safetensors", "--prompt", "A landscape at sunrise", "--seed", "42", "--timeout", "300"],
+  "cwd": ".",
+  "workspace_write": true,
+  "requires_approval": true,
+  "timeout_s": 330,
+  "artifacts": ["comfyui-result.png"],
+  "description": "Generate an owner-configured local image"
+}
+```
+
+Select this command on the dedicated workspace through the existing runner job interface (`cmd.comfyui-preset`, empty args). Approval and artifact access use the runner's existing authenticated API. Successful jobs export one PNG to the workspace and the runner collects it using its usual SHA-256 artifact mechanism. The output is atomically replaced on each successful run. The helper uses a client-generated job UUID, bounded response sizes, no proxy or redirects and a fixed loopback host. Cancellation on error, timeout or SIGTERM is best effort; a killed helper or unavailable server may leave a job running, so inspect the local ComfyUI queue. No automatic retries or cloud fallback. The helper is not yet installed by install-ubuntu.sh; copy it manually. No live GPU/Android verification yet. Dynamic phone-authored prompts and video workflows need a separately permissioned typed API and are not supported here.
+
 ## Tests
+`python3 -m unittest -v test_comfyui_preset` tests graph validation, simulated job responses, output and cancellation.
+
 `python3 -I test_runner.py` (schedules incl. DST, routine replay/missed/overlap/approval, worktree isolation, proxy token handling, MCP client vs a fixture). `VB_REAL_MCP=1 python3 -I test_runner.py Mcp` additionally downloads and runs the real MCP filesystem server (requires npm access).
