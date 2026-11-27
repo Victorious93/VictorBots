@@ -94,6 +94,7 @@ jobs:
           git config --global user.name ci
           git config --global user.email ci@example.invalid
           python3 -I test_runner.py -v
+          python3 -m unittest -v test_comfyui_preset
 
   gradle:
     name: Gradle assembleDebug (non-blocking)
